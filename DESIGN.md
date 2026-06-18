@@ -84,9 +84,9 @@ Entities are the nodes of the graph. Every entity shares a common envelope; type
 ### Entity types (cyber-first)
 
 - **Domain** — `attributes`: `registered_domain`, `tld`, `is_wildcard`.
-- **IPAddress** — `attributes`: `version` (4/6), `is_private`.
+- **IPAddress** — `attributes`: `version` (4/6), `is_private`. Phase 6 InternetDB enrichment may merge in `cpes`, `vulns`, and `hostnames`, plus source tags. `vulns` is a stopgap attribute until a later `Vulnerability` entity type exists.
 - **Certificate** — `attributes`: `sha256`, `serial`, `issuer`, `subject`, `not_before`, `not_after`, `sans` (list).
-- **Service** — a host:port observation. `attributes`: `ip`, `port`, `protocol`, `product`, `banner`. (Populated by scan-data sources like Shodan in Phase 3.)
+- **Service** — a host:port observation. `value` is canonicalized connector-side as `ip:port`; `attributes`: `ip`, `port`, `protocol`, `product`, `banner`. Phase 6 InternetDB produces `Service` with `protocol`, `product`, and `banner` set to null because InternetDB does not provide them.
 - **ASN** — `attributes`: `number`, `name`, `org`.
 - **Netblock** — `attributes`: `cidr`, `asn`.
 - **Email** — `attributes`: `local`, `domain`.
@@ -98,6 +98,8 @@ Entities are the nodes of the graph. Every entity shares a common envelope; type
 > Adding an entity type = extend the `EntityType` enum and document its `attributes` here. No other layer should hardcode type knowledge except entity-ID derivation (§6).
 
 Phase 4 begins producing `IPAddress` entities from passive DNS resolution; the schema type pre-existed and did not change.
+
+Phase 6 enriches authorized IPv4 pivots through Shodan InternetDB. Passive IP enrichment still obeys the Phase 4 IP-pivot authorization policy: discovered IPs are recorded, but only authorized IPs become seeds for service enrichment. Emitting InternetDB hostnames as `Domain` entities is deferred to avoid uncontrolled reverse expansion.
 
 ---
 
@@ -190,7 +192,8 @@ class Connector(ABC):
 | Storage (P3)       | Neo4j                                   | Native graph queries & link analysis. |
 | API (future)       | FastAPI                                 | Backend for UI. |
 | Tests              | `pytest`, `pytest-asyncio`, `respx`     | HTTP mocked; **no live network in CI**. |
-| Agent (P6)         | Claude tool-use                         | Orchestrates connectors as tools. |
+| Agent (P9)         | Claude tool-use                         | Orchestrates connectors as tools. |
+| InternetDB (P6)    | Shodan InternetDB API                   | Key-free IPv4 to Service enrichment for authorized IP pivots. |
 
 ### Neo4j graph model (Phase 3)
 
@@ -229,9 +232,10 @@ Per-host configuration can override defaults such as timeout and retry count wit
 3. **Entity resolution + Neo4j.** Swap store to Neo4j behind the same interface; richer merge/link analysis.
 4. **Multi-hop pivoting + DNS resolution.** Frontier-based pivoting with depth/budget controls and passive DNS resolution from Domain to IPAddress.
 5. **Resilience layer.** Disk caching, retry/backoff, per-host circuit breaking, and per-host HTTP configuration behind `CollectionContext.http`.
-6. **Breadth.** InternetDB first, then Shodan, Censys, passive DNS, Amass/Subfinder wrappers, HaveIBeenPwned, GitHub dorking, and the first gated active connector.
-7. **Reporting + visualization.** Investigation report with per-finding sources & confidence; link-graph view.
-8. **Agent layer.** LLM planner that pivots across connectors and writes the narrative report. Engine remains the source of truth.
+6. **Shodan InternetDB connector.** Key-free IPv4 to Service enrichment for authorized IP pivots.
+7. **Breadth.** Paid Shodan, Censys, passive DNS, Amass/Subfinder wrappers, HaveIBeenPwned, GitHub dorking, and the first gated active connector.
+8. **Reporting + visualization.** Investigation report with per-finding sources & confidence; link-graph view.
+9. **Agent layer.** LLM planner that pivots across connectors and writes the narrative report. Engine remains the source of truth.
 
 ---
 

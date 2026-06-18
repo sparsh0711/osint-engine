@@ -32,6 +32,16 @@ def main() -> None:
     run_parser.add_argument("--no-cache", action="store_true")
     run_parser.add_argument("--cache-ttl", type=float, default=24 * 60 * 60)
     run_parser.add_argument("--cache-dir", default=".cache/osint")
+    run_parser.add_argument(
+        "--authorize",
+        action="append",
+        default=[],
+        metavar="TARGET",
+        help=(
+            "Authorize a domain, IP, or CIDR for pivots. Repeat as needed; "
+            "discovered IPs are recorded but not service-enriched unless covered."
+        ),
+    )
 
     args = parser.parse_args()
     configure_logging()
@@ -51,6 +61,7 @@ def main() -> None:
                 args.no_cache,
                 args.cache_ttl,
                 args.cache_dir,
+                args.authorize,
             )
         )
 
@@ -68,6 +79,7 @@ async def _run_domain(
     no_cache: bool,
     cache_ttl: float,
     cache_dir: str,
+    authorized_targets: list[str],
 ) -> None:
     collected_at = datetime.now(timezone.utc)
     seed = Entity(
@@ -95,7 +107,7 @@ async def _run_domain(
     try:
         store, audit_log = await engine.run(
             seed,
-            Authorization(),
+            Authorization(in_scope_targets=authorized_targets),
             store=store,
             max_depth=max_depth,
             max_seeds=max_seeds,
