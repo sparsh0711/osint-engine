@@ -11,6 +11,7 @@ from osint.core.entities import Entity, EntityType
 from osint.core.provenance import Provenance
 from osint.orchestrator.authorization import Authorization
 from osint.orchestrator.engine import Engine
+from osint.util.http import create_http_client
 from osint.util.logging import configure_logging
 
 
@@ -28,6 +29,9 @@ def main() -> None:
     run_parser.add_argument("--max-depth", type=int, default=0)
     run_parser.add_argument("--max-seeds", type=int, default=10)
     run_parser.add_argument("--max-calls", type=int, default=30)
+    run_parser.add_argument("--no-cache", action="store_true")
+    run_parser.add_argument("--cache-ttl", type=float, default=24 * 60 * 60)
+    run_parser.add_argument("--cache-dir", default=".cache/osint")
 
     args = parser.parse_args()
     configure_logging()
@@ -44,6 +48,9 @@ def main() -> None:
                 args.max_depth,
                 args.max_seeds,
                 args.max_calls,
+                args.no_cache,
+                args.cache_ttl,
+                args.cache_dir,
             )
         )
 
@@ -58,6 +65,9 @@ async def _run_domain(
     max_depth: int,
     max_seeds: int,
     max_calls: int,
+    no_cache: bool,
+    cache_ttl: float,
+    cache_dir: str,
 ) -> None:
     collected_at = datetime.now(timezone.utc)
     seed = Entity(
@@ -75,7 +85,12 @@ async def _run_domain(
         ],
         confidence=1.0,
     )
-    engine = Engine()
+    http_client = create_http_client(
+        cache_enabled=not no_cache,
+        cache_ttl_seconds=cache_ttl,
+        cache_dir=cache_dir,
+    )
+    engine = Engine(http_client=http_client)
     store = _build_store(store_name, neo4j_uri, neo4j_user, neo4j_password)
     try:
         store, audit_log = await engine.run(
@@ -89,6 +104,7 @@ async def _run_domain(
         store.snapshot(out)
         _print_summary(store.all_entities(), audit_log, out)
     finally:
+        await http_client.aclose()
         close = getattr(store, "close", None)
         if close:
             close()

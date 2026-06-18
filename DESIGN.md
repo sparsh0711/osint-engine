@@ -183,6 +183,8 @@ class Connector(ABC):
 | Models/validation  | `pydantic` v2                           | Typed entities, free serialization/validation. |
 | Async I/O          | `asyncio` + `httpx`                     | Concurrent collection. |
 | Rate limiting      | custom token-bucket per source          | Central, ToS-respecting. |
+| HTTP resilience    | central `ctx.http` wrapper              | Disk cache, retry/backoff, and per-host circuit breaking without connector logic. |
+| Disk cache         | JSON files under `.cache/osint/`        | Cross-run reuse for slow-moving passive-source responses. |
 | Logging            | `structlog`                             | Structured audit trail. |
 | Storage (P1-P2)    | in-memory + JSON snapshot               | Zero infra; testable. |
 | Storage (P3)       | Neo4j                                   | Native graph queries & link analysis. |
@@ -206,6 +208,18 @@ Recording and pivoting are separate controls. Every discovered entity and relati
 
 The passive/active gate is enforced per hop before dispatch. Unauthorized active connectors are refused and recorded in the audit log; Phase 4 still ships no active connectors.
 
+### HTTP resilience (Phase 5)
+
+All connector HTTP traffic still flows through `CollectionContext.http`; connectors keep the same `.get()` interface and do not implement resilience themselves.
+
+The disk cache is keyed by `sha256(full_request_url)` and stores the URL, status code, headers, body, and fetch timestamp. Fresh entries are served without touching the network. The default TTL is 24 hours and is configurable per run. Only definitive responses are cached: 2xx and 404. Transient failures such as 429, 5xx, and timeouts are never cached.
+
+The retry policy retries 429, 500, 502, 503, 504, connection errors, and read/connect timeouts. Other 4xx responses, including 400, 401, 403, and 404, return immediately. Backoff is exponential with jitter, a maximum delay cap, and `Retry-After` support on 429 and 503 responses.
+
+The circuit breaker is per host and per run. After repeated post-retry failures, the host circuit opens and later requests fail fast without network I/O. After a cooldown, the breaker allows one half-open trial; success closes the circuit and resets the failure count. Circuit open/close events are logged for audit visibility.
+
+Per-host configuration can override defaults such as timeout and retry count without changing connector modules. DNS resolution does not use `ctx.http`, so DNS retry/caching is deferred. `Retry-After`-aware adaptive rate limiting is also deferred.
+
 ---
 
 ## 10. Phased roadmap
@@ -214,9 +228,10 @@ The passive/active gate is enforced per hop before dispatch. Unauthorized active
 2. **Second passive connector + cross-source confidence.** Add Wayback Machine CDX as an independent passive source and prove noisy-OR confidence across overlapping `Domain` entities.
 3. **Entity resolution + Neo4j.** Swap store to Neo4j behind the same interface; richer merge/link analysis.
 4. **Multi-hop pivoting + DNS resolution.** Frontier-based pivoting with depth/budget controls and passive DNS resolution from Domain to IPAddress.
-5. **Breadth.** Shodan, Censys, passive DNS, Amass/Subfinder wrappers, HaveIBeenPwned, GitHub dorking; caching + first (gated) active connector.
-6. **Reporting + visualization.** Investigation report with per-finding sources & confidence; link-graph view.
-7. **Agent layer.** LLM planner that pivots across connectors and writes the narrative report. Engine remains the source of truth.
+5. **Resilience layer.** Disk caching, retry/backoff, per-host circuit breaking, and per-host HTTP configuration behind `CollectionContext.http`.
+6. **Breadth.** InternetDB first, then Shodan, Censys, passive DNS, Amass/Subfinder wrappers, HaveIBeenPwned, GitHub dorking, and the first gated active connector.
+7. **Reporting + visualization.** Investigation report with per-finding sources & confidence; link-graph view.
+8. **Agent layer.** LLM planner that pivots across connectors and writes the narrative report. Engine remains the source of truth.
 
 ---
 

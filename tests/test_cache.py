@@ -1,0 +1,93 @@
+from __future__ import annotations
+
+import httpx
+
+from osint.util.http import create_http_client
+from osint.util.ratelimit import AsyncTokenBucketLimiter
+
+
+URL = "https://cache.example.test/data"
+
+
+async def test_identical_get_serves_second_response_from_cache(respx_mock, tmp_path) -> None:
+    route = respx_mock.get(URL).respond(200, json={"value": 1})
+    client = _client(tmp_path)
+
+    try:
+        first = await client.get(URL)
+        second = await client.get(URL)
+    finally:
+        await client.aclose()
+
+    assert first.json() == {"value": 1}
+    assert second.json() == {"value": 1}
+    assert route.call_count == 1
+
+
+async def test_5xx_is_not_cached(respx_mock, tmp_path) -> None:
+    route = respx_mock.get(URL).mock(
+        side_effect=[
+            httpx.Response(500),
+            httpx.Response(200, text="fresh"),
+        ]
+    )
+    client = _client(tmp_path)
+
+    try:
+        first = await client.get(URL)
+        second = await client.get(URL)
+    finally:
+        await client.aclose()
+
+    assert first.status_code == 500
+    assert second.text == "fresh"
+    assert route.call_count == 2
+
+
+async def test_ttl_expiry_refetches(respx_mock, tmp_path) -> None:
+    now = [1000.0]
+    route = respx_mock.get(URL).mock(
+        side_effect=[
+            httpx.Response(200, text="old"),
+            httpx.Response(200, text="new"),
+        ]
+    )
+    client = _client(tmp_path, ttl=10, clock=lambda: now[0])
+
+    try:
+        first = await client.get(URL)
+        now[0] += 11
+        second = await client.get(URL)
+    finally:
+        await client.aclose()
+
+    assert first.text == "old"
+    assert second.text == "new"
+    assert route.call_count == 2
+
+
+async def test_404_is_cached(respx_mock, tmp_path) -> None:
+    route = respx_mock.get(URL).respond(404)
+    client = _client(tmp_path)
+
+    try:
+        first = await client.get(URL)
+        second = await client.get(URL)
+    finally:
+        await client.aclose()
+
+    assert first.status_code == 404
+    assert second.status_code == 404
+    assert route.call_count == 1
+
+
+def _client(tmp_path, ttl: float = 3600, clock=None):
+    return create_http_client(
+        AsyncTokenBucketLimiter(default_rate=100, capacity=100),
+        max_retries=1,
+        cache_enabled=True,
+        cache_dir=tmp_path / "cache",
+        cache_ttl_seconds=ttl,
+        circuit_failure_threshold=0,
+        clock=clock,
+    )
