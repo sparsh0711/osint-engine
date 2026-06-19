@@ -192,7 +192,7 @@ class Connector(ABC):
 | Storage (P3)       | Neo4j                                   | Native graph queries & link analysis. |
 | API (future)       | FastAPI                                 | Backend for UI. |
 | Tests              | `pytest`, `pytest-asyncio`, `respx`     | HTTP mocked; **no live network in CI**. |
-| Agent (P9)         | Claude tool-use                         | Orchestrates connectors as tools. |
+| Agent (P7)         | Anthropic SDK + injectable client       | Grounded triage and report drafting behind a testable LLM boundary. |
 | InternetDB (P6)    | Shodan InternetDB API                   | Key-free IPv4 to Service enrichment for authorized IP pivots. |
 
 ### Neo4j graph model (Phase 3)
@@ -223,6 +223,16 @@ The circuit breaker is per host and per run. After repeated post-retry failures,
 
 Per-host configuration can override defaults such as timeout and retry count without changing connector modules. DNS resolution does not use `ctx.http`, so DNS retry/caching is deferred. `Retry-After`-aware adaptive rate limiting is also deferred.
 
+### Agent layer (Phase 7)
+
+The agent is a read-only layer above the graph store. It indexes existing `EntityStore.all_entities()` and `all_relationships()` output through an agent-owned `GraphView`; it does not add store query methods, mutate the graph, execute new collection, widen scope, or spend money.
+
+All LLM access lives behind one injectable Anthropic client wrapper. Deterministic components such as graph tools, grounding validation, and report rendering can be tested without an API key or network access. The tool loop exposes only read-only graph inspection tools.
+
+The LLM proposes structured findings and recommendations. A grounding validator rejects any finding that cites missing entity or relationship IDs, has no supporting graph IDs, or includes verifiable checks that contradict cited entity attributes. Recommended actions must reference real graph entities, and scope-expanding or active work must surface its authorization requirement.
+
+The report renderer uses only validated findings for the body. Rejected or unverifiable claims are listed separately for transparency. Grounding guarantees that report claims are traceable to real graph data and that explicit checks match the graph; it does not guarantee the prose interpretation is semantically perfect.
+
 ---
 
 ## 10. Phased roadmap
@@ -233,9 +243,10 @@ Per-host configuration can override defaults such as timeout and retry count wit
 4. **Multi-hop pivoting + DNS resolution.** Frontier-based pivoting with depth/budget controls and passive DNS resolution from Domain to IPAddress.
 5. **Resilience layer.** Disk caching, retry/backoff, per-host circuit breaking, and per-host HTTP configuration behind `CollectionContext.http`.
 6. **Shodan InternetDB connector.** Key-free IPv4 to Service enrichment for authorized IP pivots.
-7. **Breadth.** Paid Shodan, Censys, passive DNS, Amass/Subfinder wrappers, HaveIBeenPwned, GitHub dorking, and the first gated active connector.
-8. **Reporting + visualization.** Investigation report with per-finding sources & confidence; link-graph view.
-9. **Agent layer.** LLM planner that pivots across connectors and writes the narrative report. Engine remains the source of truth.
+7. **Agent layer.** Grounded triage, cited investigation report, and scope-aware recommended next steps. The engine remains the source of truth.
+8. **Closed-loop execution + adaptive depth.** Human-approved or policy-gated execution of recommended follow-up collection.
+9. **Breadth.** Paid Shodan, Censys, passive DNS, Amass/Subfinder wrappers, HaveIBeenPwned, GitHub dorking, and the first gated active connector.
+10. **Visualization.** Link-graph view and richer analyst-facing presentation.
 
 ---
 

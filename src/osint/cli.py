@@ -7,6 +7,9 @@ from datetime import datetime, timezone
 import os
 from pathlib import Path
 
+from osint.agent.graph_view import GraphView
+from osint.agent.llm import AgentRunner, AnthropicLLMClient
+from osint.agent.report import render_report
 from osint.core.entities import Entity, EntityType
 from osint.core.provenance import Provenance
 from osint.orchestrator.authorization import Authorization
@@ -43,6 +46,32 @@ def main() -> None:
         ),
     )
 
+    investigate_parser = subparsers.add_parser("investigate")
+    investigate_parser.add_argument("--domain", required=True)
+    investigate_parser.add_argument("--store", choices=["memory", "neo4j"], default="memory")
+    investigate_parser.add_argument("--neo4j-uri")
+    investigate_parser.add_argument("--neo4j-user")
+    investigate_parser.add_argument("--neo4j-password")
+    investigate_parser.add_argument("--max-depth", type=int, default=1)
+    investigate_parser.add_argument("--max-seeds", type=int, default=10)
+    investigate_parser.add_argument("--max-calls", type=int, default=30)
+    investigate_parser.add_argument("--report", default="investigation.md")
+    investigate_parser.add_argument("--model", default="claude-sonnet-4-20250514")
+    investigate_parser.add_argument("--max-tool-iterations", type=int, default=5)
+    investigate_parser.add_argument("--no-cache", action="store_true")
+    investigate_parser.add_argument("--cache-ttl", type=float, default=24 * 60 * 60)
+    investigate_parser.add_argument("--cache-dir", default=".cache/osint")
+    investigate_parser.add_argument(
+        "--authorize",
+        action="append",
+        default=[],
+        metavar="TARGET",
+        help=(
+            "Authorize a domain, IP, or CIDR for pivots. Repeat as needed; "
+            "recommendations will still surface authorization required for follow-up work."
+        ),
+    )
+
     args = parser.parse_args()
     configure_logging()
 
@@ -64,6 +93,26 @@ def main() -> None:
                 args.authorize,
             )
         )
+    if args.command == "investigate":
+        asyncio.run(
+            _investigate_domain(
+                args.domain,
+                args.store,
+                args.neo4j_uri,
+                args.neo4j_user,
+                args.neo4j_password,
+                args.max_depth,
+                args.max_seeds,
+                args.max_calls,
+                args.no_cache,
+                args.cache_ttl,
+                args.cache_dir,
+                args.authorize,
+                Path(args.report),
+                args.model,
+                args.max_tool_iterations,
+            )
+        )
 
 
 async def _run_domain(
@@ -81,22 +130,7 @@ async def _run_domain(
     cache_dir: str,
     authorized_targets: list[str],
 ) -> None:
-    collected_at = datetime.now(timezone.utc)
-    seed = Entity(
-        type=EntityType.Domain,
-        value=domain,
-        attributes={},
-        sources=[
-            Provenance(
-                connector="cli",
-                source="operator",
-                query=domain,
-                collected_at=collected_at,
-                raw_ref={"argv": "--domain"},
-            )
-        ],
-        confidence=1.0,
-    )
+    seed = _domain_seed(domain)
     http_client = create_http_client(
         cache_enabled=not no_cache,
         cache_ttl_seconds=cache_ttl,
@@ -120,6 +154,76 @@ async def _run_domain(
         close = getattr(store, "close", None)
         if close:
             close()
+
+
+async def _investigate_domain(
+    domain: str,
+    store_name: str,
+    neo4j_uri: str | None,
+    neo4j_user: str | None,
+    neo4j_password: str | None,
+    max_depth: int,
+    max_seeds: int,
+    max_calls: int,
+    no_cache: bool,
+    cache_ttl: float,
+    cache_dir: str,
+    authorized_targets: list[str],
+    report_path: Path,
+    model: str,
+    max_tool_iterations: int,
+) -> None:
+    http_client = create_http_client(
+        cache_enabled=not no_cache,
+        cache_ttl_seconds=cache_ttl,
+        cache_dir=cache_dir,
+    )
+    engine = Engine(http_client=http_client)
+    store = _build_store(store_name, neo4j_uri, neo4j_user, neo4j_password)
+    try:
+        store, _ = await engine.run(
+            _domain_seed(domain),
+            Authorization(in_scope_targets=authorized_targets),
+            store=store,
+            max_depth=max_depth,
+            max_seeds=max_seeds,
+            max_calls=max_calls,
+        )
+        graph = GraphView(store)
+        runner = AgentRunner(
+            AnthropicLLMClient(model=model),
+            max_tool_iterations=max_tool_iterations,
+        )
+        result = await runner.run(graph)
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        report_path.write_text(render_report(result, graph), encoding="utf-8")
+        print(f"Investigation report: {report_path}")
+        print(f"Validated findings: {len(result.findings)}")
+        print(f"Rejected claims: {len(result.rejected_findings)}")
+    finally:
+        await http_client.aclose()
+        close = getattr(store, "close", None)
+        if close:
+            close()
+
+
+def _domain_seed(domain: str) -> Entity:
+    collected_at = datetime.now(timezone.utc)
+    return Entity(
+        type=EntityType.Domain,
+        value=domain,
+        attributes={},
+        sources=[
+            Provenance(
+                connector="cli",
+                source="operator",
+                query=domain,
+                collected_at=collected_at,
+                raw_ref={"argv": "--domain"},
+            )
+        ],
+        confidence=1.0,
+    )
 
 
 def _build_store(
