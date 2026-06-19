@@ -196,7 +196,8 @@ class Neo4jEntityStore(EntityStore):
         }
         tx.run(
             f"""
-            MATCH (a:Entity {{id: $src_id}}), (b:Entity {{id: $dst_id}})
+            MATCH (a:Entity {{id: $src_id}})
+            MATCH (b:Entity {{id: $dst_id}})
             MERGE (a)-[r:{relationship_type} {{id: $id}}]->(b)
             SET r += $props
             """,

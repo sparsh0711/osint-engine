@@ -174,6 +174,7 @@ class Connector(ABC):
 - **`Finding`** = `{ entities: list[Entity], relationships: list[Relationship] }` produced from one logical observation, each element already populated with a `Provenance` record stamped with the connector's `name`, `source`, query, timestamp, and a `raw_ref` (pointer to the stored raw artifact).
 - Connectors construct `Domain` entities via the shared `build_domain_entity` helper so the §4 domain rules cannot drift between connectors.
 - Connectors are **registered** via decorator/entry-point into a `REGISTRY` keyed by `name`; the orchestrator selects applicable connectors by matching `seed.type ∈ connector.accepts`.
+- Phase 8 adds Cert Spotter as a second independent certificate-transparency subdomain source. crt.sh returning no results no longer starves company collection; overlapping subdomains from crt.sh and Cert Spotter corroborate through the existing store merge and noisy-OR confidence rule.
 
 ---
 
@@ -246,9 +247,10 @@ Small local models may produce malformed JSON or weaker grounding; this is expec
 5. **Resilience layer.** Disk caching, retry/backoff, per-host circuit breaking, and per-host HTTP configuration behind `CollectionContext.http`.
 6. **Shodan InternetDB connector.** Key-free IPv4 to Service enrichment for authorized IP pivots.
 7. **Agent layer.** Grounded triage, cited investigation report, and scope-aware recommended next steps. The engine remains the source of truth.
-8. **Closed-loop execution + adaptive depth.** Human-approved or policy-gated execution of recommended follow-up collection.
-9. **Breadth.** Paid Shodan, Censys, passive DNS, Amass/Subfinder wrappers, HaveIBeenPwned, GitHub dorking, and the first gated active connector.
-10. **Visualization.** Link-graph view and richer analyst-facing presentation.
+8. **Company hardening.** Redundant CT subdomain source via SSLMate Cert Spotter plus Neo4j relationship write fix. crt.sh failure no longer starves collection. ASN/netblock and people/identity connectors remain pending later phases.
+9. **Closed-loop execution + adaptive depth.** Human-approved or policy-gated execution of recommended follow-up collection.
+10. **Breadth.** Paid Shodan, Censys, passive DNS, Amass/Subfinder wrappers, HaveIBeenPwned, GitHub dorking, ASN/netblock sources, people/identity connectors, and the first gated active connector.
+11. **Visualization.** Link-graph view and richer analyst-facing presentation.
 
 ---
 

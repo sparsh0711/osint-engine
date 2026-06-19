@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from osint.core.entities import Entity, EntityType
 from osint.core.provenance import Provenance
 from osint.core.relationships import RelationType
@@ -19,6 +21,7 @@ WAYBACK_API = (
     "?url=api.example.com&matchType=domain&output=json&fl=original"
     "&collapse=urlkey&limit=10000"
 )
+CERTSPOTTER_PATTERN = re.compile(r"https://api\.certspotter\.com/v1/issuances.*")
 
 
 async def test_multihop_resolves_in_scope_subdomain_not_co_san(
@@ -27,6 +30,7 @@ async def test_multihop_resolves_in_scope_subdomain_not_co_san(
     _mock_root_sources(respx_mock)
     respx_mock.get(CRTSH_API).respond(200, json=[])
     respx_mock.get(WAYBACK_API).respond(200, json=[["original"]])
+    respx_mock.get(CERTSPOTTER_PATTERN).respond(200, json=[])
 
     resolved_names: list[str] = []
 

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from osint.core.entities import Entity, EntityType
 from osint.core.provenance import Provenance
 from osint.core.relationships import RelationType
@@ -13,6 +15,7 @@ WAYBACK_URL = (
     "?url=example.com&matchType=domain&output=json&fl=original"
     "&collapse=urlkey&limit=10000"
 )
+CERTSPOTTER_PATTERN = re.compile(r"https://api\.certspotter\.com/v1/issuances.*")
 AUTHORIZED_URL = "https://internetdb.shodan.io/8.8.8.8"
 UNAUTHORIZED_URL = "https://internetdb.shodan.io/1.1.1.1"
 
@@ -114,6 +117,7 @@ async def test_ip_corroboration_from_dns_and_internetdb(
 def _mock_domain_sources(respx_mock) -> None:
     respx_mock.get(CRTSH_URL).respond(200, json=[])
     respx_mock.get(WAYBACK_URL).respond(200, json=[["original"]])
+    respx_mock.get(CERTSPOTTER_PATTERN).respond(200, json=[])
 
 
 def _seed(domain: str) -> Entity:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+import re
 
 from osint.core.entities import Entity, EntityType
 from osint.core.provenance import Provenance
@@ -14,6 +15,7 @@ WAYBACK_ROOT = (
     "?url=example.com&matchType=domain&output=json&fl=original"
     "&collapse=urlkey&limit=10000"
 )
+CERTSPOTTER_PATTERN = re.compile(r"https://api\.certspotter\.com/v1/issuances.*")
 
 
 def test_default_budget_caps_match_live_sane_defaults() -> None:
@@ -27,6 +29,7 @@ async def test_max_calls_budget_stops_before_exceeding_cap(respx_mock, monkeypat
     monkeypatch.setattr("osint.connectors.dns.resolve_host", lambda _name: [])
     respx_mock.get(CRTSH_ROOT).respond(200, json=[])
     respx_mock.get(WAYBACK_ROOT).respond(200, json=[["original"]])
+    respx_mock.get(CERTSPOTTER_PATTERN).respond(200, json=[])
 
     _store, audit_log = await Engine().run(
         _seed(),
@@ -59,6 +62,7 @@ async def test_max_seeds_budget_logs_stop(respx_mock, monkeypatch) -> None:
         ],
     )
     respx_mock.get(WAYBACK_ROOT).respond(200, json=[["original"]])
+    respx_mock.get(CERTSPOTTER_PATTERN).respond(200, json=[])
 
     _store, audit_log = await Engine().run(
         _seed(),

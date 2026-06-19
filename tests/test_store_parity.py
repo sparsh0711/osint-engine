@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 
 import pytest
 
@@ -19,6 +20,7 @@ WAYBACK_URL = (
     "?url=example.com&matchType=domain&output=json&fl=original"
     "&collapse=urlkey&limit=10000"
 )
+CERTSPOTTER_PATTERN = re.compile(r"https://api\.certspotter\.com/v1/issuances.*")
 
 
 @pytest.fixture()
@@ -85,6 +87,9 @@ def _mock_sources(respx_mock) -> None:
                 ["https://only-wb.example.com/path"],
             ],
         )
+    )
+    respx_mock.get(CERTSPOTTER_PATTERN).mock(
+        return_value=__import__("httpx").Response(200, json=[])
     )
 
 

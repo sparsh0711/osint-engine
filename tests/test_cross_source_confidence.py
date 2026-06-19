@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from osint.core.entities import Entity, EntityType
@@ -15,6 +17,7 @@ WAYBACK_URL = (
     "?url=example.com&matchType=domain&output=json&fl=original"
     "&collapse=urlkey&limit=10000"
 )
+CERTSPOTTER_PATTERN = re.compile(r"https://api\.certspotter\.com/v1/issuances.*")
 
 
 async def test_cross_source_confidence_tiers(respx_mock) -> None:
@@ -40,6 +43,7 @@ async def test_cross_source_confidence_tiers(respx_mock) -> None:
             ["https://only-wb.example.com/path"],
         ],
     )
+    respx_mock.get(CERTSPOTTER_PATTERN).respond(200, json=[])
 
     store, _audit_log = await Engine().run(_seed("example.com"), Authorization())
     entities = {entity.value: entity for entity in store.all_entities()}

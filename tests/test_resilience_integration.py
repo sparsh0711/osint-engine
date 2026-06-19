@@ -14,6 +14,7 @@ from osint.util.ratelimit import AsyncTokenBucketLimiter
 
 CRTSH_PATTERN = re.compile(r"https://crt\.sh/.*")
 WAYBACK_PATTERN = re.compile(r"https://web\.archive\.org/cdx/search/cdx.*")
+CERTSPOTTER_PATTERN = re.compile(r"https://api\.certspotter\.com/v1/issuances.*")
 
 
 async def test_multihop_run_bounds_flaky_source_with_circuit_breaker(
@@ -22,6 +23,7 @@ async def test_multihop_run_bounds_flaky_source_with_circuit_breaker(
     events: list[dict[str, object]] = []
     crtsh_route = respx_mock.get(CRTSH_PATTERN).respond(502)
     wayback_route = respx_mock.get(WAYBACK_PATTERN).mock(side_effect=_wayback_response)
+    respx_mock.get(CERTSPOTTER_PATTERN).respond(200, json=[])
     resolved_names: list[str] = []
 
     def fake_resolve(name: str) -> list[str]:
