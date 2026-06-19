@@ -89,13 +89,14 @@ def test_validator_rejects_uncited_finding() -> None:
     assert result.rejected_findings[0].reasons == ["finding has no supporting graph IDs"]
 
 
-def test_validator_flags_scope_expanding_action_without_authorization() -> None:
+def test_validator_infers_authorization_for_scope_expanding_action() -> None:
     graph, service = _graph()
     output = AgentOutput(
         recommended_actions=[
             RecommendedAction(
                 action="scan service",
                 target=service.id,
+                target_entity_ids=[service.id],
                 rationale="Validate exposure.",
             )
         ]
@@ -103,9 +104,28 @@ def test_validator_flags_scope_expanding_action_without_authorization() -> None:
 
     result = validate_agent_output(output, graph)
 
-    assert result.recommended_actions[0].warnings == [
-        "authorization_required is missing for scope-expanding or active work"
-    ]
+    action = result.recommended_actions[0]
+    assert action.warnings == []
+    assert action.action.authorization_required is not None
+
+
+def test_validator_resolves_recommended_action_target_entity_ids() -> None:
+    graph, service = _graph()
+    output = AgentOutput(
+        recommended_actions=[
+            RecommendedAction(
+                action="review service",
+                target=f"{service.id}, display text",
+                target_entity_ids=[service.id],
+                rationale="The ID is the canonical graph reference.",
+                authorization_required="Review only.",
+            )
+        ]
+    )
+
+    result = validate_agent_output(output, graph)
+
+    assert result.recommended_actions[0].warnings == []
 
 
 def _graph() -> tuple[GraphView, Entity]:

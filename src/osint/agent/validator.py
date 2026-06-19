@@ -21,6 +21,7 @@ AUTHORIZATION_KEYWORDS = {
     "scan",
     "screenshot",
     "validate",
+    "lookup",
 }
 
 
@@ -86,15 +87,51 @@ def _entity_attribute(entity: Entity, attribute: str) -> Any:
 
 def _action_warnings(action: RecommendedAction, graph: GraphView) -> list[str]:
     warnings: list[str] = []
-    if _target_entity(action.target, graph) is None:
+    missing_targets = _missing_target_entity_ids(action, graph)
+    if missing_targets:
+        warnings.append(
+            "recommended action target does not reference a real entity: "
+            + ", ".join(missing_targets)
+        )
+    elif not action.target_entity_ids and _target_entity(action.target, graph) is None:
         warnings.append(f"recommended action target does not reference a real entity: {action.target}")
 
     text = f"{action.action} {action.rationale}".lower()
-    if action.authorization_required is None and any(
-        keyword in text for keyword in AUTHORIZATION_KEYWORDS
-    ):
-        warnings.append("authorization_required is missing for scope-expanding or active work")
+    if _authorization_missing(action.authorization_required) and _needs_authorization(text):
+        action.authorization_required = _inferred_authorization(action)
     return warnings
+
+
+def _missing_target_entity_ids(action: RecommendedAction, graph: GraphView) -> list[str]:
+    missing: list[str] = []
+    for entity_id in action.target_entity_ids:
+        if not isinstance(graph.get(entity_id), Entity):
+            missing.append(entity_id)
+    return missing
+
+
+def _authorization_missing(value: str | None) -> bool:
+    if value is None:
+        return True
+    return value.strip().lower() in {"", "none", "null", "n/a", "not required"}
+
+
+def _needs_authorization(text: str) -> bool:
+    return any(keyword in text for keyword in AUTHORIZATION_KEYWORDS) or any(
+        phrase in text
+        for phrase in (
+            "port scan",
+            "reverse dns",
+            "dns lookup",
+            "active probing",
+        )
+    )
+
+
+def _inferred_authorization(action: RecommendedAction) -> str:
+    if action.target:
+        return f"Authorization required before active work against {action.target}"
+    return "Authorization required before active or scope-expanding work"
 
 
 def _target_entity(target: str, graph: GraphView) -> Entity | None:

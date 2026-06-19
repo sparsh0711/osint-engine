@@ -31,6 +31,7 @@ class Finding(BaseModel):
 class RecommendedAction(BaseModel):
     action: str
     target: str
+    target_entity_ids: list[str] = Field(default_factory=list)
     rationale: str
     authorization_required: str | None = None
 

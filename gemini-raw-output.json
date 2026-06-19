@@ -1,1 +1,32 @@
-{"findings": [], "recommended_actions": []}
+{
+  "findings": [
+    {
+      "id": "f1",
+      "claim": "Four IPAddress entities lack associated host information (HOSTS relationships).",
+      "rationale": "The `list_unenriched_ips` function identified four IP addresses that do not have any `HOSTS` relationships in the graph, indicating a lack of contextual host information for these network entities. These IPs are 104.20.23.154, 172.66.147.243, 2606:4700:90c5:72db:f264:dc3:ef6b:ff98, and 2606:4700:90c5:72db:f2ef:b90:ef6b:ff98.",
+      "priority": "high",
+      "supporting_entity_ids": [
+        "73b754a549dccb64",
+        "dd029063848e7f3a",
+        "487a0ed6371bbcd9",
+        "6aed24a14c3cc557"
+      ],
+      "supporting_relationship_ids": [],
+      "checks": []
+    }
+  ],
+  "recommended_actions": [
+    {
+      "action": "Perform reverse DNS lookups on the unenriched IP addresses.",
+      "target": "104.20.23.154, 172.66.147.243, 2606:4700:90c5:72db:f264:dc3:ef6b:ff98, 2606:4700:90c5:72db:f2ef:b90:ef6b:ff98",
+      "target_entity_ids": [
+        "73b754a549dccb64",
+        "dd029063848e7f3a",
+        "487a0ed6371bbcd9",
+        "6aed24a14c3cc557"
+      ],
+      "rationale": "Enriching these IP addresses with reverse DNS information will help identify the associated hostnames, providing critical context for further investigation and understanding their role within the network. This will help establish `HOSTS` relationships.",
+      "authorization_required": "null"
+    }
+  ]
+}

@@ -47,6 +47,7 @@ Return ONLY this exact JSON shape, with no markdown fences:
     {
       "action": "Suggested next collection or analysis step.",
       "target": "entity-id-or-value-seen-from-tools",
+      "target_entity_ids": ["entity-id-seen-from-tools"],
       "rationale": "Why this is the next step.",
       "authorization_required": "Authorize the target/range if needed, otherwise null"
     }
@@ -58,7 +59,9 @@ Rules:
 - supporting_entity_ids MUST be a list of real entity IDs you saw via tools, never a single string.
 - Every finding MUST cite at least one supporting_entity_ids or supporting_relationship_ids entry.
 - priority MUST be one of: high, medium, low.
-- recommended_actions MUST be a list; use action, target, rationale, authorization_required.
+- recommended_actions MUST be a list; use action, target, target_entity_ids, rationale, authorization_required.
+- target_entity_ids MUST be a list of real entity IDs affected by the action when any are known.
+- Active work such as port scans, probes, screenshots, validation, enrichment, or reverse DNS at scale MUST include authorization_required.
 - If you cannot ground a finding in real IDs, do not include it."""
 
 DEFAULT_OPENAI_BASE_URL = "http://localhost:11434/v1"
@@ -515,6 +518,20 @@ def _coerce_recommended_action(raw: Any, index: int) -> RecommendedAction | None
         if target is not None:
             item["target"] = target
             logger.info(f"llm_output_field_coerced kind=recommended_action index={index} field=target")
+    item["target_entity_ids"] = _target_entity_ids(item)
+    if item["target_entity_ids"]:
+        logger.info(
+            f"llm_output_field_coerced kind=recommended_action index={index} field=target_entity_ids"
+        )
+    item["authorization_required"] = _authorization_value(item.get("authorization_required"))
+    if item["authorization_required"] is None and _requires_authorization(
+        str(item.get("action", "")),
+        str(item.get("rationale", "")),
+    ):
+        item["authorization_required"] = _inferred_authorization(item)
+        logger.info(
+            f"llm_output_field_coerced kind=recommended_action index={index} field=authorization_required"
+        )
 
     try:
         return RecommendedAction.model_validate(item)
@@ -588,10 +605,66 @@ def _supporting_ids(value: Any, fallback: Any, kind: str, index: int) -> list[st
 
 
 def _target_from_text(text: str) -> str | None:
-    match = re.search(r"\b([0-9a-f]{16})\b", text)
-    if match:
-        return match.group(1)
+    ids = _entity_ids_from_text(text)
+    if ids:
+        return ", ".join(ids)
     return None
+
+
+def _target_entity_ids(item: dict[str, Any]) -> list[str]:
+    ids: list[str] = []
+    for key in ("target_entity_ids", "supporting_entity_ids", "entity_ids"):
+        ids.extend(_string_list(item.get(key)))
+    entity_id = item.get("entity_id")
+    if isinstance(entity_id, str):
+        ids.append(entity_id)
+    for key in ("target", "action", "rationale"):
+        value = item.get(key)
+        if isinstance(value, str):
+            ids.extend(_entity_ids_from_text(value))
+    return list(dict.fromkeys(ids))
+
+
+def _entity_ids_from_text(text: str) -> list[str]:
+    return re.findall(r"\b[0-9a-f]{16}\b", text)
+
+
+def _authorization_value(value: Any) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        return str(value)
+    stripped = value.strip()
+    if stripped.lower() in {"", "none", "null", "n/a", "not required"}:
+        return None
+    return stripped
+
+
+def _requires_authorization(action: str, rationale: str) -> bool:
+    text = f"{action} {rationale}".lower()
+    return any(
+        marker in text
+        for marker in (
+            "active",
+            "collect",
+            "enrich",
+            "probe",
+            "scan",
+            "screenshot",
+            "validate",
+            "port scan",
+            "reverse dns",
+            "dns lookup",
+            "active probing",
+        )
+    )
+
+
+def _inferred_authorization(item: dict[str, Any]) -> str:
+    target = item.get("target")
+    if isinstance(target, str) and target:
+        return f"Authorization required before active work against {target}"
+    return "Authorization required before active or scope-expanding work"
 
 
 def _checks(value: Any) -> list[Check]:

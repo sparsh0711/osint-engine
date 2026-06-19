@@ -224,6 +224,39 @@ async def test_agent_loop_coerces_observed_gemini_shape_to_valid_finding() -> No
     assert result.findings[0].claim == "Found service exposure on port 443."
     assert result.findings[0].supporting_entity_ids == [service.id]
     assert result.recommended_actions[0].action.target == service.id
+    assert result.recommended_actions[0].warnings == []
+
+
+async def test_agent_loop_coerces_next_steps_entity_targets_and_active_authorization() -> None:
+    graph, service = _graph()
+    fake = RawFinalLLM(
+        {
+            "findings": [
+                {
+                    "id": "f1",
+                    "claim": "Service is present.",
+                    "rationale": "The cited service is in the graph.",
+                    "priority": "medium",
+                    "supporting_entity_ids": [service.id],
+                    "supporting_relationship_ids": [],
+                    "checks": [],
+                }
+            ],
+            "next_steps": [
+                {
+                    "step": f"Perform a port scan on the identified entity {service.id}."
+                }
+            ],
+        }
+    )
+
+    result = await AgentRunner(fake).run(graph)
+
+    action = result.recommended_actions[0]
+    assert action.action.target == service.id
+    assert action.action.target_entity_ids == [service.id]
+    assert action.action.authorization_required is not None
+    assert action.warnings == []
 
 
 class FakeLLM:
