@@ -29,6 +29,8 @@ The project is designed for professional cyber investigations where scope contro
 - Discovered IPs are recorded, but service enrichment only runs when the target is authorized.
 - Secrets are read from `.env`, which is ignored by Git.
 
+See [SECURITY.md](SECURITY.md) for the authorized-use policy and secret-handling notes.
+
 ## Quick Start
 
 ```powershell
@@ -96,6 +98,14 @@ The suite uses mocked HTTP for connector tests. Neo4j tests run when Docker/Neo4
 ## Architecture
 
 See [DESIGN.md](DESIGN.md) for the full design specification, data model, connector contract, confidence merge rules, and phased roadmap.
+
+## Example Output
+
+See [docs/sample-report.md](docs/sample-report.md) for a sanitized example report.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
 
 ## Status
 
