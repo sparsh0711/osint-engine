@@ -26,7 +26,17 @@ def main() -> None:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     run_parser = subparsers.add_parser("run")
-    run_parser.add_argument("--domain", required=True)
+    run_seed = run_parser.add_mutually_exclusive_group(required=True)
+    run_seed.add_argument("--domain")
+    run_seed.add_argument("--username")
+    run_parser.add_argument(
+        "--investigation-reason",
+        help=(
+            "Required for --username. Use only for lawful public-data investigation "
+            "(for example due diligence, fraud, or consented checks); you are "
+            "responsible for applicable privacy obligations."
+        ),
+    )
     run_parser.add_argument("--out", default="result.json")
     run_parser.add_argument("--store", choices=["memory", "neo4j"], default="memory")
     run_parser.add_argument("--neo4j-uri")
@@ -50,7 +60,17 @@ def main() -> None:
     )
 
     investigate_parser = subparsers.add_parser("investigate")
-    investigate_parser.add_argument("--domain", required=True)
+    investigate_seed = investigate_parser.add_mutually_exclusive_group(required=True)
+    investigate_seed.add_argument("--domain")
+    investigate_seed.add_argument("--username")
+    investigate_parser.add_argument(
+        "--investigation-reason",
+        help=(
+            "Required for --username. Use only for lawful public-data investigation "
+            "(for example due diligence, fraud, or consented checks); you are "
+            "responsible for applicable privacy obligations."
+        ),
+    )
     investigate_parser.add_argument("--store", choices=["memory", "neo4j"], default="memory")
     investigate_parser.add_argument("--neo4j-uri")
     investigate_parser.add_argument("--neo4j-user")
@@ -79,9 +99,10 @@ def main() -> None:
     configure_logging()
 
     if args.command == "run":
+        seed = _seed_from_args(parser, args)
         asyncio.run(
-            _run_domain(
-                args.domain,
+            _run_seed(
+                seed,
                 Path(args.out),
                 args.store,
                 args.neo4j_uri,
@@ -94,12 +115,14 @@ def main() -> None:
                 args.cache_ttl,
                 args.cache_dir,
                 args.authorize,
+                args.investigation_reason,
             )
         )
     if args.command == "investigate":
+        seed = _seed_from_args(parser, args)
         asyncio.run(
-            _investigate_domain(
-                args.domain,
+            _investigate_seed(
+                seed,
                 args.store,
                 args.neo4j_uri,
                 args.neo4j_user,
@@ -114,12 +137,13 @@ def main() -> None:
                 Path(args.report),
                 args.model,
                 args.max_tool_iterations,
+                args.investigation_reason,
             )
         )
 
 
-async def _run_domain(
-    domain: str,
+async def _run_seed(
+    seed: Entity,
     out: Path,
     store_name: str,
     neo4j_uri: str | None,
@@ -132,14 +156,17 @@ async def _run_domain(
     cache_ttl: float,
     cache_dir: str,
     authorized_targets: list[str],
+    investigation_reason: str | None = None,
 ) -> None:
-    seed = _domain_seed(domain)
     http_client = create_http_client(
         cache_enabled=not no_cache,
         cache_ttl_seconds=cache_ttl,
         cache_dir=cache_dir,
     )
-    engine = Engine(http_client=http_client)
+    engine = Engine(
+        http_client=http_client,
+        config=_engine_config(investigation_reason),
+    )
     store = _build_store(store_name, neo4j_uri, neo4j_user, neo4j_password)
     try:
         store, audit_log = await engine.run(
@@ -159,8 +186,8 @@ async def _run_domain(
             close()
 
 
-async def _investigate_domain(
-    domain: str,
+async def _investigate_seed(
+    seed: Entity,
     store_name: str,
     neo4j_uri: str | None,
     neo4j_user: str | None,
@@ -175,17 +202,21 @@ async def _investigate_domain(
     report_path: Path,
     model: str,
     max_tool_iterations: int,
+    investigation_reason: str | None = None,
 ) -> None:
     http_client = create_http_client(
         cache_enabled=not no_cache,
         cache_ttl_seconds=cache_ttl,
         cache_dir=cache_dir,
     )
-    engine = Engine(http_client=http_client)
+    engine = Engine(
+        http_client=http_client,
+        config=_engine_config(investigation_reason),
+    )
     store = _build_store(store_name, neo4j_uri, neo4j_user, neo4j_password)
     try:
         store, _ = await engine.run(
-            _domain_seed(domain),
+            seed,
             Authorization(in_scope_targets=authorized_targets),
             store=store,
             max_depth=max_depth,
@@ -210,6 +241,17 @@ async def _investigate_domain(
             close()
 
 
+def _seed_from_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> Entity:
+    if args.domain:
+        return _domain_seed(args.domain)
+    reason = (args.investigation_reason or "").strip()
+    if not reason:
+        parser.error(
+            "--investigation-reason is required for --username public account-existence checks"
+        )
+    return _username_seed(args.username, reason)
+
+
 def _domain_seed(domain: str) -> Entity:
     collected_at = datetime.now(timezone.utc)
     return Entity(
@@ -227,6 +269,38 @@ def _domain_seed(domain: str) -> Entity:
         ],
         confidence=1.0,
     )
+
+
+def _username_seed(username: str, investigation_reason: str) -> Entity:
+    collected_at = datetime.now(timezone.utc)
+    return Entity(
+        type=EntityType.Username,
+        value=username,
+        attributes={
+            "account_status": "search-seed",
+            "investigation_reason": investigation_reason,
+        },
+        sources=[
+            Provenance(
+                connector="cli",
+                source="operator",
+                query=username,
+                collected_at=collected_at,
+                raw_ref={
+                    "argv": "--username",
+                    "investigation_reason": investigation_reason,
+                },
+            )
+        ],
+        confidence=1.0,
+        tags={"username-search-seed"},
+    )
+
+
+def _engine_config(investigation_reason: str | None) -> dict[str, str]:
+    if not investigation_reason:
+        return {}
+    return {"investigation_reason": investigation_reason}
 
 
 def _build_store(

@@ -175,6 +175,7 @@ class Connector(ABC):
 - Connectors construct `Domain` entities via the shared `build_domain_entity` helper so the §4 domain rules cannot drift between connectors.
 - Connectors are **registered** via decorator/entry-point into a `REGISTRY` keyed by `name`; the orchestrator selects applicable connectors by matching `seed.type ∈ connector.accepts`.
 - Phase 8 adds Cert Spotter as a second independent certificate-transparency subdomain source. crt.sh returning no results no longer starves company collection; overlapping subdomains from crt.sh and Cert Spotter corroborate through the existing store merge and noisy-OR confidence rule.
+- Phase 9 adds an intent-gated username account-existence connector using the vendored WhatsMyName dataset. Username results are unverified leads, not identity proof. The connector records only public account existence, platform, and profile URL; it must not scrape profile content, attempt logins, or collect personal identifiers such as DOB, address, phone number, or inferred real names.
 
 ---
 
@@ -248,9 +249,10 @@ Small local models may produce malformed JSON or weaker grounding; this is expec
 6. **Shodan InternetDB connector.** Key-free IPv4 to Service enrichment for authorized IP pivots.
 7. **Agent layer.** Grounded triage, cited investigation report, and scope-aware recommended next steps. The engine remains the source of truth.
 8. **Company hardening.** Redundant CT subdomain source via SSLMate Cert Spotter plus Neo4j relationship write fix. crt.sh failure no longer starves collection. ASN/netblock and people/identity connectors remain pending later phases.
-9. **Closed-loop execution + adaptive depth.** Human-approved or policy-gated execution of recommended follow-up collection.
-10. **Breadth.** Paid Shodan, Censys, passive DNS, Amass/Subfinder wrappers, HaveIBeenPwned, GitHub dorking, ASN/netblock sources, people/identity connectors, and the first gated active connector.
-11. **Visualization.** Link-graph view and richer analyst-facing presentation.
+9. **Person axis.** Intent-gated username account-existence enumeration using the vendored WhatsMyName dataset. Existence-only leads, modest confidence, no profile scraping, no logins, and no DOB/address/phone/data-broker aggregation by policy.
+10. **Closed-loop execution + adaptive depth.** Human-approved or policy-gated execution of recommended follow-up collection.
+11. **Breadth.** Paid Shodan, Censys, passive DNS, Amass/Subfinder wrappers, HaveIBeenPwned, GitHub dorking, ASN/netblock sources, additional policy-gated people/identity connectors, and the first gated active connector.
+12. **Visualization.** Link-graph view and richer analyst-facing presentation.
 
 ---
 
