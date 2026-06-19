@@ -192,7 +192,7 @@ class Connector(ABC):
 | Storage (P3)       | Neo4j                                   | Native graph queries & link analysis. |
 | API (future)       | FastAPI                                 | Backend for UI. |
 | Tests              | `pytest`, `pytest-asyncio`, `respx`     | HTTP mocked; **no live network in CI**. |
-| Agent (P7)         | Anthropic SDK + injectable client       | Grounded triage and report drafting behind a testable LLM boundary. |
+| Agent (P7)         | provider-agnostic injectable LLM client | Grounded triage and report drafting; OpenAI-compatible local Ollama by default, Anthropic optional. |
 | InternetDB (P6)    | Shodan InternetDB API                   | Key-free IPv4 to Service enrichment for authorized IP pivots. |
 
 ### Neo4j graph model (Phase 3)
@@ -227,11 +227,13 @@ Per-host configuration can override defaults such as timeout and retry count wit
 
 The agent is a read-only layer above the graph store. It indexes existing `EntityStore.all_entities()` and `all_relationships()` output through an agent-owned `GraphView`; it does not add store query methods, mutate the graph, execute new collection, widen scope, or spend money.
 
-All LLM access lives behind one injectable Anthropic client wrapper. Deterministic components such as graph tools, grounding validation, and report rendering can be tested without an API key or network access. The tool loop exposes only read-only graph inspection tools.
+All LLM access lives behind one injectable provider-agnostic client wrapper. The default provider is OpenAI-compatible chat completions at `http://localhost:11434/v1` with `qwen2.5:3b`, so a local Ollama model can run the agent without a paid API key. Hosted OpenAI-compatible endpoints and Anthropic are selected through `OSINT_LLM_PROVIDER`, `OSINT_LLM_BASE_URL`, `OSINT_LLM_MODEL`, and `OSINT_LLM_API_KEY`; Anthropic can also use `ANTHROPIC_API_KEY`. Deterministic components such as graph tools, grounding validation, and report rendering can be tested without an API key or network access. The tool loop exposes only read-only graph inspection tools.
 
 The LLM proposes structured findings and recommendations. A grounding validator rejects any finding that cites missing entity or relationship IDs, has no supporting graph IDs, or includes verifiable checks that contradict cited entity attributes. Recommended actions must reference real graph entities, and scope-expanding or active work must surface its authorization requirement.
 
 The report renderer uses only validated findings for the body. Rejected or unverifiable claims are listed separately for transparency. Grounding guarantees that report claims are traceable to real graph data and that explicit checks match the graph; it does not guarantee the prose interpretation is semantically perfect.
+
+Small local models may produce malformed JSON or weaker grounding; this is expected and safe because malformed output degrades to zero validated findings, and unsupported claims are rejected by the validator before rendering.
 
 ---
 

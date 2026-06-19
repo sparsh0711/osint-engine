@@ -7,8 +7,10 @@ from datetime import datetime, timezone
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 from osint.agent.graph_view import GraphView
-from osint.agent.llm import AgentRunner, AnthropicLLMClient
+from osint.agent.llm import AgentRunner, create_llm_client
 from osint.agent.report import render_report
 from osint.core.entities import Entity, EntityType
 from osint.core.provenance import Provenance
@@ -19,6 +21,7 @@ from osint.util.logging import configure_logging
 
 
 def main() -> None:
+    load_dotenv()
     parser = argparse.ArgumentParser(prog="osint")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -56,7 +59,7 @@ def main() -> None:
     investigate_parser.add_argument("--max-seeds", type=int, default=10)
     investigate_parser.add_argument("--max-calls", type=int, default=30)
     investigate_parser.add_argument("--report", default="investigation.md")
-    investigate_parser.add_argument("--model", default="claude-sonnet-4-20250514")
+    investigate_parser.add_argument("--model")
     investigate_parser.add_argument("--max-tool-iterations", type=int, default=5)
     investigate_parser.add_argument("--no-cache", action="store_true")
     investigate_parser.add_argument("--cache-ttl", type=float, default=24 * 60 * 60)
@@ -191,7 +194,7 @@ async def _investigate_domain(
         )
         graph = GraphView(store)
         runner = AgentRunner(
-            AnthropicLLMClient(model=model),
+            create_llm_client(model=model),
             max_tool_iterations=max_tool_iterations,
         )
         result = await runner.run(graph)

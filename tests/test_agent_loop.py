@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from osint.agent.graph_view import GraphView
-from osint.agent.llm import AgentRunner, LLMResponse, ToolCall
+from osint.agent.llm import AgentRunner, LLMResponse, ToolCall, _agent_output_response
 from osint.agent.report import render_report
 from osint.agent.schema import AgentOutput, Check, Finding, Priority
 from osint.core.entities import Entity, EntityType
@@ -77,18 +77,179 @@ async def test_agent_loop_respects_iteration_cap() -> None:
     assert result.findings == []
 
 
+async def test_agent_loop_returns_tool_error_and_still_renders_report() -> None:
+    graph, service = _graph()
+    valid = Finding(
+        id="valid",
+        claim="Port 443 is exposed.",
+        rationale="The service entity has port 443.",
+        priority=Priority.HIGH,
+        supporting_entity_ids=[service.id],
+        checks=[Check(entity_id=service.id, attribute="port", expected=443)],
+    )
+    fake = FakeLLM(
+        [
+            LLMResponse(
+                tool_calls=[
+                    ToolCall(
+                        id="bad-tool",
+                        name="get_neighbors",
+                        arguments={"entity_id": service.id, "rel_type": "__LINK__"},
+                    )
+                ]
+            ),
+            LLMResponse(final_output=AgentOutput(findings=[valid])),
+        ]
+    )
+
+    result = await AgentRunner(fake, max_tool_iterations=3).run(graph)
+    report = render_report(result, graph)
+
+    assert [finding.id for finding in result.findings] == ["valid"]
+    assert "Port 443 is exposed." in report
+    assert any(
+        message.get("role") == "tool"
+        and message["content"][0]["result"]["error"].startswith("invalid rel_type")
+        for message in fake.messages_seen
+    )
+
+
+async def test_agent_loop_parses_variant_final_output_fields() -> None:
+    graph, service = _graph()
+    fake = RawFinalLLM(
+        {
+            "findings": [
+                {
+                    "description": "Service is exposed.",
+                    "explanation": "The cited service has port 443.",
+                    "severity": "high",
+                    "supporting_entity_ids": [service.id],
+                    "checks": [
+                        {
+                            "entity_id": service.id,
+                            "attribute": "port",
+                            "expected": 443,
+                        }
+                    ],
+                }
+            ]
+        }
+    )
+
+    result = await AgentRunner(fake).run(graph)
+
+    assert len(result.findings) == 1
+    assert result.findings[0].id == "f1"
+    assert result.findings[0].claim == "Service is exposed."
+    assert result.findings[0].rationale == "The cited service has port 443."
+    assert result.findings[0].priority.value == "high"
+
+
+async def test_agent_loop_skips_one_malformed_finding_and_keeps_valid_one() -> None:
+    graph, service = _graph()
+    fake = RawFinalLLM(
+        {
+            "findings": [
+                {"not_a_claim": "cannot be coerced"},
+                {
+                    "id": "valid",
+                    "claim": "Port 443 is exposed.",
+                    "rationale": "The cited service has port 443.",
+                    "priority": "high",
+                    "supporting_entity_ids": [service.id],
+                    "checks": [
+                        {
+                            "entity_id": service.id,
+                            "attribute": "port",
+                            "expected": 443,
+                        }
+                    ],
+                },
+            ]
+        }
+    )
+
+    result = await AgentRunner(fake).run(graph)
+
+    assert [finding.id for finding in result.findings] == ["valid"]
+
+
+async def test_agent_loop_strict_final_output_still_parses() -> None:
+    graph, service = _graph()
+    fake = RawFinalLLM(
+        {
+            "findings": [
+                {
+                    "id": "strict",
+                    "claim": "Port 443 is exposed.",
+                    "rationale": "The cited service has port 443.",
+                    "priority": "high",
+                    "supporting_entity_ids": [service.id],
+                    "supporting_relationship_ids": [],
+                    "checks": [],
+                }
+            ],
+            "recommended_actions": [],
+        }
+    )
+
+    result = await AgentRunner(fake).run(graph)
+
+    assert [finding.id for finding in result.findings] == ["strict"]
+
+
+async def test_agent_loop_coerces_observed_gemini_shape_to_valid_finding() -> None:
+    graph, service = _graph()
+    fake = RawFinalLLM(
+        {
+            "findings": [
+                {
+                    "entity_id": service.id,
+                    "finding": "Found service exposure on port 443.",
+                    "explanation": "The cited service is present in the graph.",
+                    "severity": "medium",
+                }
+            ],
+            "next_steps": [
+                {
+                    "step": f"Review service entity {service.id} for authorization requirements."
+                }
+            ],
+        }
+    )
+
+    result = await AgentRunner(fake).run(graph)
+
+    assert [finding.id for finding in result.findings] == ["f1"]
+    assert result.findings[0].claim == "Found service exposure on port 443."
+    assert result.findings[0].supporting_entity_ids == [service.id]
+    assert result.recommended_actions[0].action.target == service.id
+
+
 class FakeLLM:
     def __init__(self, responses: list[LLMResponse]) -> None:
         self.responses = responses
         self.calls = 0
         self.saw_tool_result = False
+        self.messages_seen = []
 
     async def complete(self, messages, tools):
         self.calls += 1
+        self.messages_seen.extend(messages)
         self.saw_tool_result = self.saw_tool_result or any(
             message.get("role") == "tool" for message in messages
         )
         return self.responses.pop(0)
+
+
+class RawFinalLLM:
+    def __init__(self, payload: dict) -> None:
+        self.payload = payload
+
+    async def complete(self, messages, tools):
+        import json
+
+        return _agent_output_response(json.dumps(self.payload))
 
 
 def _graph() -> tuple[GraphView, Entity]:

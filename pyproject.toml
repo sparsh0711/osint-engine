@@ -12,6 +12,7 @@ dependencies = [
     "dnspython>=2.6",
     "httpx>=0.27",
     "pydantic>=2.7",
+    "python-dotenv>=1.0",
     "structlog>=24.1",
 ]
 

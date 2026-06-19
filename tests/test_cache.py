@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import gzip
+import hashlib
+import json
+
 import httpx
 
 from osint.util.http import create_http_client
@@ -78,6 +82,54 @@ async def test_404_is_cached(respx_mock, tmp_path) -> None:
 
     assert first.status_code == 404
     assert second.status_code == 404
+    assert route.call_count == 1
+
+
+async def test_gzip_response_round_trips_from_cache(respx_mock, tmp_path) -> None:
+    compressed = gzip.compress(b'{"value": 1}')
+    route = respx_mock.get(URL).respond(
+        200,
+        headers={"Content-Encoding": "gzip", "Content-Type": "application/json"},
+        content=compressed,
+    )
+    client = _client(tmp_path)
+
+    try:
+        first = await client.get(URL)
+        second = await client.get(URL)
+    finally:
+        await client.aclose()
+
+    assert first.json() == {"value": 1}
+    assert second.json() == {"value": 1}
+    assert route.call_count == 1
+
+
+async def test_corrupt_cache_entry_is_treated_as_miss(respx_mock, tmp_path) -> None:
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    cache_path = cache_dir / f"{hashlib.sha256(URL.encode('utf-8')).hexdigest()}.json"
+    cache_path.write_text(
+        json.dumps(
+            {
+                "url": URL,
+                "status_code": 200,
+                "headers": {"Content-Type": "application/json"},
+                "body": "not-valid-base64!",
+                "fetched_at": 1000.0,
+            }
+        ),
+        encoding="utf-8",
+    )
+    route = respx_mock.get(URL).respond(200, json={"fresh": True})
+    client = _client(tmp_path, clock=lambda: 1001.0)
+
+    try:
+        response = await client.get(URL)
+    finally:
+        await client.aclose()
+
+    assert response.json() == {"fresh": True}
     assert route.call_count == 1
 
 
