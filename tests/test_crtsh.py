@@ -66,6 +66,24 @@ async def test_crtsh_failure_yields_nothing_and_does_not_raise(respx_mock) -> No
     assert findings == []
 
 
+async def test_crtsh_404_is_no_data_and_not_retried(respx_mock) -> None:
+    route = respx_mock.get("https://crt.sh/?q=%25.example.com&output=json").respond(404)
+    http = create_http_client(AsyncTokenBucketLimiter(default_rate=100, capacity=100))
+    logger = RecordingLogger()
+    ctx = CollectionContext(http=http, logger=logger)
+
+    findings = [
+        finding
+        async for finding in CrtShConnector().collect(_seed("example.com"), ctx)
+    ]
+    await http.aclose()
+
+    assert findings == []
+    assert route.call_count == 1
+    assert ("info", "crtsh_no_results", {"domain": "example.com"}) in logger.events
+    assert not any(event == "crtsh_collection_failed" for _level, event, _kw in logger.events)
+
+
 def _seed(domain: str) -> Entity:
     return Entity(
         type=EntityType.Domain,
@@ -81,3 +99,14 @@ def _seed(domain: str) -> Entity:
         ],
         confidence=1.0,
     )
+
+
+class RecordingLogger:
+    def __init__(self) -> None:
+        self.events = []
+
+    def info(self, event: str, **kwargs) -> None:
+        self.events.append(("info", event, kwargs))
+
+    def warning(self, event: str, **kwargs) -> None:
+        self.events.append(("warning", event, kwargs))

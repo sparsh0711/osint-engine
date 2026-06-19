@@ -37,6 +37,10 @@ class CrtShConnector(Connector):
 
         try:
             response = await ctx.http.get(query)
+            if response.status_code == 404:
+                if ctx.logger:
+                    ctx.logger.info("crtsh_no_results", domain=domain)
+                return
             response.raise_for_status()
             records = response.json()
         except (httpx.HTTPError, ValueError, TypeError) as exc:
