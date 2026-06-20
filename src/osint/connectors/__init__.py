@@ -1,5 +1,5 @@
 """Connector registry and built-in connectors."""
 
-from osint.connectors import certspotter, crtsh, dns, internetdb, usernames, wayback
+from osint.connectors import asn, certspotter, crtsh, dns, internetdb, usernames, wayback
 
-__all__ = ["certspotter", "crtsh", "dns", "internetdb", "usernames", "wayback"]
+__all__ = ["asn", "certspotter", "crtsh", "dns", "internetdb", "usernames", "wayback"]

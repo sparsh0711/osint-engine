@@ -25,7 +25,15 @@ CERTSPOTTER_URL = (
 def test_builtin_connectors_load() -> None:
     import osint.connectors  # noqa: F401
 
-    assert {"certspotter", "crtsh", "wayback", "dns", "internetdb"} <= set(REGISTRY)
+    assert {
+        "asn",
+        "certspotter",
+        "crtsh",
+        "wayback",
+        "dns",
+        "internetdb",
+        "usernames",
+    } <= set(REGISTRY)
 
 
 async def test_certspotter_prevents_subdomain_starvation_when_crtsh_empty(

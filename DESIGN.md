@@ -87,8 +87,8 @@ Entities are the nodes of the graph. Every entity shares a common envelope; type
 - **IPAddress** — `attributes`: `version` (4/6), `is_private`. Phase 6 InternetDB enrichment may merge in `cpes`, `vulns`, and `hostnames`, plus source tags. `vulns` is a stopgap attribute until a later `Vulnerability` entity type exists.
 - **Certificate** — `attributes`: `sha256`, `serial`, `issuer`, `subject`, `not_before`, `not_after`, `sans` (list).
 - **Service** — a host:port observation. `value` is canonicalized connector-side as `ip:port`; `attributes`: `ip`, `port`, `protocol`, `product`, `banner`. Phase 6 InternetDB produces `Service` with `protocol`, `product`, and `banner` set to null because InternetDB does not provide them.
-- **ASN** — `attributes`: `number`, `name`, `org`.
-- **Netblock** — `attributes`: `cidr`, `asn`.
+- **ASN** — `attributes`: `number`, `name`, `org`. Phase 10 produces ASN entities from Team Cymru IP-to-ASN DNS lookups.
+- **Netblock** — `attributes`: `cidr`, `asn`. Phase 10 produces announcing netblocks from Team Cymru IP-to-ASN DNS lookups.
 - **Email** — `attributes`: `local`, `domain`.
 - **Username** — `attributes`: `platform` (nullable).
 - **URL** — `attributes`: `scheme`, `host`, `path`.
@@ -176,6 +176,7 @@ class Connector(ABC):
 - Connectors are **registered** via decorator/entry-point into a `REGISTRY` keyed by `name`; the orchestrator selects applicable connectors by matching `seed.type ∈ connector.accepts`.
 - Phase 8 adds Cert Spotter as a second independent certificate-transparency subdomain source. crt.sh returning no results no longer starves company collection; overlapping subdomains from crt.sh and Cert Spotter corroborate through the existing store merge and noisy-OR confidence rule.
 - Phase 9 adds an intent-gated username account-existence connector using the vendored WhatsMyName dataset. Username results are unverified leads, not identity proof. The connector records only public account existence, platform, and profile URL; it must not scrape profile content, attempt logins, or collect personal identifiers such as DOB, address, phone number, or inferred real names.
+- Phase 10 adds keyless ASN/netblock enrichment via Team Cymru's DNS interface. It maps discovered IP addresses to announcing ASN and CIDR prefix entities, enabling owned-vs-shared IP range analysis for authorization decisions. Full ASN-to-all-prefix enumeration is deferred because it needs a BGP/RIR source rather than individual IP-to-ASN DNS lookups.
 
 ---
 
@@ -248,11 +249,12 @@ Small local models may produce malformed JSON or weaker grounding; this is expec
 5. **Resilience layer.** Disk caching, retry/backoff, per-host circuit breaking, and per-host HTTP configuration behind `CollectionContext.http`.
 6. **Shodan InternetDB connector.** Key-free IPv4 to Service enrichment for authorized IP pivots.
 7. **Agent layer.** Grounded triage, cited investigation report, and scope-aware recommended next steps. The engine remains the source of truth.
-8. **Company hardening.** Redundant CT subdomain source via SSLMate Cert Spotter plus Neo4j relationship write fix. crt.sh failure no longer starves collection. ASN/netblock and people/identity connectors remain pending later phases.
+8. **Company hardening.** Redundant CT subdomain source via SSLMate Cert Spotter plus Neo4j relationship write fix. crt.sh failure no longer starves collection. People/identity connectors remain pending later phases.
 9. **Person axis.** Intent-gated username account-existence enumeration using the vendored WhatsMyName dataset. Existence-only leads, modest confidence, no profile scraping, no logins, and no DOB/address/phone/data-broker aggregation by policy.
-10. **Closed-loop execution + adaptive depth.** Human-approved or policy-gated execution of recommended follow-up collection.
-11. **Breadth.** Paid Shodan, Censys, passive DNS, Amass/Subfinder wrappers, HaveIBeenPwned, GitHub dorking, ASN/netblock sources, additional policy-gated people/identity connectors, and the first gated active connector.
-12. **Visualization.** Link-graph view and richer analyst-facing presentation.
+10. **ASN/netblock enrichment.** Team Cymru keyless DNS IP-to-ASN mapping produces `ASN` and `Netblock` entities plus `ANNOUNCES` and `CONTAINS` edges, enabling owned-vs-shared IP range analysis for authorization decisions. Full ASN-prefix enumeration remains deferred to a BGP/RIR source.
+11. **Closed-loop execution + adaptive depth.** Human-approved or policy-gated execution of recommended follow-up collection.
+12. **Breadth.** Paid Shodan, Censys, passive DNS, Amass/Subfinder wrappers, HaveIBeenPwned, GitHub dorking, additional policy-gated people/identity connectors, and the first gated active connector.
+13. **Visualization.** Link-graph view and richer analyst-facing presentation.
 
 ---
 

@@ -44,6 +44,7 @@ async def test_internetdb_enriches_authorized_ip_only(
         "osint.connectors.dns.resolve_host",
         lambda name: ["8.8.8.8", "1.1.1.1"] if name == "example.com" else [],
     )
+    monkeypatch.setattr("osint.connectors.asn.resolve_txt", lambda _name: [])
 
     store, audit_log = await Engine().run(
         _seed("example.com"),
@@ -100,6 +101,7 @@ async def test_ip_corroboration_from_dns_and_internetdb(
         "osint.connectors.dns.resolve_host",
         lambda name: ["8.8.8.8"] if name == "example.com" else [],
     )
+    monkeypatch.setattr("osint.connectors.asn.resolve_txt", lambda _name: [])
 
     store, _ = await Engine().run(
         _seed("example.com"),
