@@ -1,7 +1,13 @@
 from __future__ import annotations
 
 from osint.agent.graph_view import GraphView
-from osint.agent.llm import AgentRunner, LLMResponse, ToolCall, _agent_output_response
+from osint.agent.llm import (
+    SYSTEM_PROMPT,
+    AgentRunner,
+    LLMResponse,
+    ToolCall,
+    _agent_output_response,
+)
 from osint.agent.report import render_report
 from osint.agent.schema import AgentOutput, Check, Finding, Priority
 from osint.core.entities import Entity, EntityType
@@ -259,6 +265,62 @@ async def test_agent_loop_coerces_next_steps_entity_targets_and_active_authoriza
     assert action.warnings == []
 
 
+async def test_agent_loop_drops_username_profile_content_identity_recommendation() -> None:
+    graph, username = _username_graph()
+    fake = RawFinalLLM(
+        {
+            "findings": [
+                {
+                    "id": "f1",
+                    "claim": (
+                        "The handle alice appears to exist on ExampleSite; handle "
+                        "collision means it may belong to a different person."
+                    ),
+                    "rationale": "The cited Username entity has account_status exists.",
+                    "priority": "medium",
+                    "supporting_entity_ids": [username.id],
+                    "supporting_relationship_ids": [],
+                    "checks": [
+                        {
+                            "entity_id": username.id,
+                            "attribute": "account_status",
+                            "expected": "exists",
+                        }
+                    ],
+                }
+            ],
+            "recommended_actions": [
+                {
+                    "action": (
+                        "Review profile content to verify whether same-handle "
+                        "accounts belong to the same individual."
+                    ),
+                    "target": username.id,
+                    "target_entity_ids": [username.id],
+                    "rationale": "Look for identifying information across profiles.",
+                    "authorization_required": None,
+                }
+            ],
+        }
+    )
+
+    result = await AgentRunner(fake).run(graph)
+
+    assert [finding.id for finding in result.findings] == ["f1"]
+    assert result.recommended_actions == []
+
+
+def test_system_prompt_frames_username_hits_as_unverified_same_handle_leads() -> None:
+    prompt = SYSTEM_PROMPT.lower()
+
+    assert "username/account-existence results are independent, unverified leads" in prompt
+    assert "never claim that accounts sharing a username belong to the same person" in prompt
+    assert "handle collision" in prompt
+    assert "may belong to different people" in prompt
+    assert "must not suggest scraping/reviewing profile content" in prompt
+    assert "explicit account-owner confirmation" in prompt
+
+
 class FakeLLM:
     def __init__(self, responses: list[LLMResponse]) -> None:
         self.responses = responses
@@ -303,3 +365,27 @@ def _graph() -> tuple[GraphView, Entity]:
     )
     store.upsert_entity(service)
     return GraphView(store), service
+
+
+def _username_graph() -> tuple[GraphView, Entity]:
+    store = MemoryEntityStore()
+    username = Entity(
+        type=EntityType.Username,
+        value="ExampleSite:alice",
+        attributes={
+            "platform": "ExampleSite",
+            "profile_url": "https://example.test/alice",
+            "account_status": "exists",
+        },
+        sources=[
+            Provenance(
+                connector="usernames",
+                source="whatsmyname",
+                query="https://example.test/alice",
+                raw_ref={"test": True},
+            )
+        ],
+        confidence=0.5,
+    )
+    store.upsert_entity(username)
+    return GraphView(store), username

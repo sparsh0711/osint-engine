@@ -9,5 +9,6 @@ work/
 live-*.json
 *.log
 out*.md
+investigation*.md
 result.json
 gemini-raw-output.json

@@ -62,6 +62,12 @@ Rules:
 - recommended_actions MUST be a list; use action, target, target_entity_ids, rationale, authorization_required.
 - target_entity_ids MUST be a list of real entity IDs affected by the action when any are known.
 - Active work such as port scans, probes, screenshots, validation, enrichment, or reverse DNS at scale MUST include authorization_required.
+- Username/account-existence results are independent, unverified leads only.
+- NEVER claim that accounts sharing a username belong to the same person or form one unified identity/persona.
+- For username evidence, say "the handle X appears to exist on these sites" and explicitly note that handle collision means the accounts may belong to different people.
+- Do not describe a Person entity from a username search as a confirmed individual; it is only a search subject grouping unverified same-handle leads.
+- For username evidence, recommended_actions must not suggest scraping/reviewing profile content, collecting personal identifiers, or verifying that same-handle accounts are the same person.
+- Username follow-up recommendations should be limited to manual review of consent/scope, reducing false positives, or seeking explicit account-owner confirmation.
 - If you cannot ground a finding in real IDs, do not include it."""
 
 DEFAULT_OPENAI_BASE_URL = "http://localhost:11434/v1"

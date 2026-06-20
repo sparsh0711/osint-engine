@@ -170,11 +170,12 @@ class UsernamesConnector(Connector):
         reason = str(config.get("investigation_reason") or "")
         provenance = Provenance(
             connector=self.name,
-            source="operator-intent",
+            source=self.source,
             query=username,
             raw_ref={
                 "seed_id": seed.id,
                 "investigation_reason": reason,
+                "provenance_role": "operator-intent-metadata",
             },
         )
         return Entity(

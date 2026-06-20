@@ -5,12 +5,14 @@ import json
 from pathlib import Path
 
 import httpx
+import pytest
 
 from osint.connectors.context import CollectionContext
 from osint.connectors.usernames import UsernamesConnector
 from osint.core.entities import Entity, EntityType
 from osint.core.provenance import Provenance
 from osint.core.relationships import RelationType
+from osint.store.memory import MemoryEntityStore
 
 
 async def test_usernames_exists_emits_username_person_and_edge(
@@ -130,6 +132,51 @@ async def test_usernames_http_200_not_found_page_does_not_mark_exists(
     ]
 
     assert findings == []
+
+
+async def test_usernames_single_site_hit_stays_low_confidence_with_operator_intent(
+    respx_mock,
+    tmp_path,
+) -> None:
+    dataset = _dataset(
+        tmp_path,
+        [_site("ExampleSite", "https://example.test/{account}", "exists-marker")],
+    )
+    respx_mock.get("https://example.test/alice").respond(
+        200,
+        text="exists-marker",
+    )
+    ctx = CollectionContext(
+        http=PassthroughHttpClient(),
+        logger=RecordingLogger(),
+        config={"investigation_reason": "consented check"},
+    )
+    store = MemoryEntityStore()
+
+    findings = [
+        finding
+        async for finding in UsernamesConnector(dataset).collect(_seed("alice"), ctx)
+    ]
+    for finding in findings:
+        for entity in finding.entities:
+            store.upsert_entity(entity)
+        for relationship in finding.relationships:
+            store.upsert_relationship(relationship)
+
+    person = next(
+        entity for entity in store.all_entities() if entity.type == EntityType.Person
+    )
+    username = next(
+        entity for entity in store.all_entities() if entity.type == EntityType.Username
+    )
+
+    assert person.confidence == pytest.approx(0.5)
+    assert username.confidence == pytest.approx(0.5)
+    assert {source.source for source in person.sources} == {"whatsmyname"}
+    assert any(
+        source.raw_ref.get("provenance_role") == "operator-intent-metadata"
+        for source in person.sources
+    )
 
 
 async def test_usernames_concurrency_is_bounded(tmp_path) -> None:

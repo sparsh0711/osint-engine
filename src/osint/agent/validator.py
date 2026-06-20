@@ -11,7 +11,7 @@ from osint.agent.schema import (
     ValidatedAction,
     ValidationResult,
 )
-from osint.core.entities import Entity
+from osint.core.entities import Entity, EntityType
 
 AUTHORIZATION_KEYWORDS = {
     "active",
@@ -36,10 +36,11 @@ def validate_agent_output(output: AgentOutput, graph: GraphView) -> ValidationRe
         else:
             valid_findings.append(finding)
 
-    actions = [
-        ValidatedAction(action=action, warnings=_action_warnings(action, graph))
-        for action in output.recommended_actions
-    ]
+    actions = []
+    for action in output.recommended_actions:
+        if _violates_username_action_policy(action, graph):
+            continue
+        actions.append(ValidatedAction(action=action, warnings=_action_warnings(action, graph)))
     return ValidationResult(
         findings=valid_findings,
         rejected_findings=rejected,
@@ -100,6 +101,24 @@ def _action_warnings(action: RecommendedAction, graph: GraphView) -> list[str]:
     if _authorization_missing(action.authorization_required) and _needs_authorization(text):
         action.authorization_required = _inferred_authorization(action)
     return warnings
+
+
+def _violates_username_action_policy(action: RecommendedAction, graph: GraphView) -> bool:
+    if not any(entity.type == EntityType.Username for entity in graph.entities.values()):
+        return False
+    text = f"{action.action} {action.rationale}".lower()
+    blocked_phrases = (
+        "profile content",
+        "reviewing the profile",
+        "review the profile",
+        "review profiles",
+        "same individual",
+        "same person",
+        "belong to the same",
+        "identifying information",
+        "personal identifiers",
+    )
+    return any(phrase in text for phrase in blocked_phrases)
 
 
 def _missing_target_entity_ids(action: RecommendedAction, graph: GraphView) -> list[str]:
