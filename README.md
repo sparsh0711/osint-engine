@@ -1,35 +1,43 @@
 # OSINT Engine
 
-Passive cyber OSINT graph engine with provenance, Neo4j storage, scoped enrichment, and grounded investigation reports.
+OSINT Engine is a scoped cyber-OSINT investigation engine that builds an auditable graph from passive public sources, stores it in memory or Neo4j, and can generate grounded investigation reports through an injectable LLM client.
+
+The project is designed around one core rule: collect useful intelligence without losing authorization control. Passive identification data can be gathered broadly, while exposure-style enrichment such as service and port data remains gated behind explicit authorization.
 
 ## What It Does
 
-OSINT Engine starts from a domain and builds an auditable entity graph from passive sources. It normalizes domains, IP addresses, certificates, and services into deterministic entities, preserves source provenance on every node and relationship, and raises confidence when independent sources corroborate the same fact.
+Starting from a domain or username, OSINT Engine collects normalized entities and relationships with source provenance, confidence scores, and deterministic IDs. It can pivot across domains, IP addresses, ASNs, netblocks, services, usernames, certificates, URLs, and vulnerabilities while keeping every claim traceable to source data.
 
-The project is designed for professional cyber investigations where scope control matters. Passive collection is allowed by default; active or scope-expanding enrichment is gated behind explicit authorization.
+The agent layer can reason over the collected graph, but final reports are validated before rendering. Ungrounded, contradicted, or unsafe model claims are rejected instead of being shown as findings.
 
 ## Current Capabilities
 
-- Modular connector framework with passive/active safety declarations.
-- Passive subdomain and certificate-transparency collection from crt.sh and Cert Spotter.
-- Historical hostname discovery from the Wayback Machine CDX API.
+- Deterministic entity model with provenance, confidence merging, and stable IDs.
+- Passive subdomain discovery from crt.sh, Cert Spotter, and Wayback Machine.
 - Passive DNS resolution from domains to IP addresses.
-- Authorized IPv4 service enrichment through Shodan InternetDB.
-- Multi-hop pivoting with depth, seed, and query budgets.
-- HTTP resilience layer with disk caching, retry/backoff, and circuit breaking.
-- In-memory JSON snapshots and Neo4j graph storage.
-- Provider-agnostic LLM agent for grounded triage and Markdown reports.
-- Validator rejects ungrounded or contradicted LLM findings before report rendering.
+- ASN and netblock enrichment through Team Cymru DNS.
+- Authorized service enrichment through Shodan InternetDB.
+- First-class Vulnerability entities and `HAS_VULNERABILITY` relationships.
+- CVE enrichment through Shodan CVEDB, including CVSS, EPSS, KEV, and severity.
+- Neo4j graph storage with queryable Vulnerability properties: `cvss`, `epss`, `kev`, and `severity`.
+- Multi-hop pivoting with depth, seed, and call budgets.
+- HTTP resilience layer with caching, retry/backoff, and circuit breaking.
+- Username existence checks via a vendored WhatsMyName dataset.
+- Provider-agnostic LLM client for local Ollama/OpenAI-compatible endpoints or hosted providers.
+- Grounded report validator that rejects fabricated or unsupported findings.
 
 ## Safety Model
 
-- No connector bypasses the shared `CollectionContext` HTTP layer.
-- Every entity and relationship carries provenance.
-- Active or scope-expanding recommendations must surface authorization requirements.
-- Discovered IPs are recorded, but service enrichment only runs when the target is authorized.
+- Passive collection is allowed by default.
+- Exposure enrichment is gated behind `--authorize`.
+- ASN, netblock, and CVE metadata are identification enrichment and can run on discovered IPs or CVEs.
+- InternetDB service enrichment remains authorization-gated.
+- Username checks are account-existence only: no profile scraping, login attempts, or personal data collection.
+- Same-handle username results are treated as unverified leads, not proof of a single person.
+- Agent findings must cite graph entities and must pass validation before report rendering.
 - Secrets are read from `.env`, which is ignored by Git.
 
-See [SECURITY.md](SECURITY.md) for the authorized-use policy and secret-handling notes.
+See [SECURITY.md](SECURITY.md) for the authorized-use policy.
 
 ## Quick Start
 
@@ -45,76 +53,128 @@ For Neo4j-backed runs:
 docker compose up -d
 ```
 
-Set `NEO4J_PASSWORD` in `.env` to match `docker-compose.yml`.
+Set `NEO4J_PASSWORD` in `.env` to match the password used by `docker-compose.yml`.
 
-## Run Passive Collection
+## Configuration
 
-Memory store:
+Local-only values belong in `.env`:
+
+```text
+NEO4J_URI=bolt://localhost:7687
+NEO4J_USER=neo4j
+NEO4J_PASSWORD=change-me
+
+OSINT_LLM_PROVIDER=openai_compatible
+OSINT_LLM_BASE_URL=http://localhost:11434/v1
+OSINT_LLM_MODEL=qwen2.5:3b
+OSINT_LLM_API_KEY=
+OSINT_LLM_TIMEOUT=300
+```
+
+Do not commit `.env` or API keys. The repository includes `.env.example` as a safe template.
+
+## Usage
+
+Run passive collection with the memory store:
 
 ```powershell
 .\.venv\Scripts\osint.exe run --domain example.com --max-depth 2
 ```
 
-Neo4j store:
+Run passive collection into Neo4j:
 
 ```powershell
 .\.venv\Scripts\osint.exe run --domain example.com --max-depth 2 --store neo4j
 ```
 
-## Run an Investigation Report
-
-Without IP/service enrichment:
+Run a grounded investigation report:
 
 ```powershell
 .\.venv\Scripts\osint.exe investigate --domain example.com --max-depth 2 --store neo4j --report out.md
 ```
 
-With explicit authorization for an IP or CIDR:
+Run with explicit authorization for exposure enrichment:
 
 ```powershell
 .\.venv\Scripts\osint.exe investigate --domain scanme.nmap.org --authorize 45.33.32.156 --max-depth 2 --store neo4j --report out.md
 ```
 
-## LLM Providers
+Run a username account-existence investigation:
 
-The agent uses a provider-agnostic client. By default it targets an OpenAI-compatible local endpoint:
-
-```text
-OSINT_LLM_PROVIDER=openai_compatible
-OSINT_LLM_BASE_URL=http://localhost:11434/v1
-OSINT_LLM_MODEL=qwen2.5:3b
+```powershell
+.\.venv\Scripts\osint.exe investigate --username your-handle --investigation-reason "authorized self-test"
 ```
 
-Hosted OpenAI-compatible endpoints and Anthropic-style providers can be configured with environment variables. API keys belong in `.env` and must not be committed.
+## Useful Neo4j Queries
 
-## Tests
+Show ASN ownership chains:
+
+```cypher
+MATCH (a:ASN)-[:ANNOUNCES]->(n:Netblock)-[:CONTAINS]->(ip:IPAddress)
+RETURN a, n, ip
+```
+
+Show hosted services on authorized IPs:
+
+```cypher
+MATCH (ip:IPAddress)-[:HOSTS]->(s:Service)
+RETURN ip, s
+```
+
+Show high-priority or KEV vulnerabilities:
+
+```cypher
+MATCH (ip:IPAddress)-[:HAS_VULNERABILITY]->(v:Vulnerability)
+WHERE v.kev = true OR v.cvss >= 9.0
+RETURN ip, v
+ORDER BY v.cvss DESC
+```
+
+## Testing
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-The suite uses mocked HTTP for connector tests. Neo4j tests run when Docker/Neo4j is available and skip otherwise.
+The suite uses mocked HTTP for connector behavior. Neo4j-backed tests run when Neo4j is reachable and skip when it is not.
 
-## Architecture
+## Project Structure
 
-See [DESIGN.md](DESIGN.md) for the full design specification, data model, connector contract, confidence merge rules, and phased roadmap.
+```text
+src/osint/core/          Entity, relationship, ID, and provenance models
+src/osint/connectors/    Passive and scoped enrichment connectors
+src/osint/orchestrator/  Pivot policy, budgets, authorization, and engine loop
+src/osint/store/         Memory and Neo4j stores
+src/osint/agent/         LLM client, tools, validation, and report rendering
+tests/                   Unit, integration, and safety tests
+docs/                    Project documentation and sample report
+```
 
-## Example Output
+## Design Notes
 
-See [docs/sample-report.md](docs/sample-report.md) for a sanitized example report.
+The system follows these design principles:
+
+- Record first, enrich second: discovered facts are stored even when deeper enrichment is gated.
+- Keep scope explicit: exposure data requires authorization.
+- Treat LLM output as untrusted: every claim must cite graph evidence and survive validation.
+- Prefer deterministic IDs and merge behavior so repeated runs are stable.
+- Keep source provenance on every entity and relationship.
+
+See [DESIGN.md](DESIGN.md) for the full architecture, data model, connector contract, confidence rules, and phased roadmap.
+
+## Status
+
+Implemented through Phase 11:
+
+- Phase 1-4: core graph engine, crt.sh, Wayback, Neo4j, multi-hop pivoting, DNS.
+- Phase 5: resilience layer with cache, retry, and circuit breaking.
+- Phase 6: InternetDB service enrichment behind authorization.
+- Phase 7: grounded LLM agent and provider-agnostic client.
+- Phase 8: Cert Spotter redundancy and Neo4j write hardening.
+- Phase 9: username account-existence enumeration with safety framing.
+- Phase 10: ASN/netblock enrichment and identification-vs-exposure split.
+- Phase 11: Vulnerability entity, CVEDB enrichment, and queryable Neo4j vulnerability fields.
 
 ## License
 
 MIT. See [LICENSE](LICENSE).
-
-## Status
-
-Implemented through Phase 8:
-
-- Core engine and deterministic graph model.
-- Passive connectors: crt.sh, Wayback, DNS, Cert Spotter.
-- Authorized InternetDB service enrichment.
-- Resilience layer.
-- Neo4j storage.
-- Grounded LLM reporting.
-- Redundant CT source hardening and Neo4j relationship write fix.
