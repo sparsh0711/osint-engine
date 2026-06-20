@@ -5,9 +5,9 @@ from collections import deque
 from datetime import datetime, timezone
 from typing import Any
 
-from osint.connectors.base import Connector, CollectionMode, REGISTRY
+from osint.connectors.base import Connector, CollectionMode, EnrichmentClass, REGISTRY
 from osint.connectors.context import CollectionContext
-from osint.core.entities import Entity
+from osint.core.entities import Entity, EntityType
 from osint.orchestrator.authorization import Authorization
 from osint.orchestrator.pivot import is_pivot_eligible
 from osint.store.base import EntityStore
@@ -119,14 +119,15 @@ class Engine:
                     discovered = [
                         entity for connector_entities in results for entity in connector_entities
                     ]
-                    accepted_types = self._accepted_entity_types()
                     for entity in sorted(discovered, key=lambda item: item.id):
                         if (
                             entity.id not in visited
-                            and entity.type in accepted_types
-                            and is_pivot_eligible(entity, authorization)
+                            and self._can_enqueue_entity(entity, authorization)
                         ):
-                            frontier.append((entity, depth + 1))
+                            if entity.type == EntityType.IPAddress:
+                                frontier.appendleft((entity, depth + 1))
+                            else:
+                                frontier.append((entity, depth + 1))
             if frontier and seeds_processed >= max_seeds:
                 audit_log.append(
                     {
@@ -156,6 +157,21 @@ class Engine:
         permitted: list[tuple[Connector, CollectionContext]] = []
         for connector in eligible:
             if max_depth == 0 and connector.name == "dns":
+                continue
+            if (
+                seed.type == EntityType.IPAddress
+                and connector.enrichment_class != EnrichmentClass.IDENTIFICATION
+                and not authorization.covers(seed)
+            ):
+                audit_log.append(
+                    {
+                        "event": "ip_exposure_connector_refused",
+                        "connector": connector.name,
+                        "seed_id": seed.id,
+                        "seed_value": seed.value,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    }
+                )
                 continue
             if connector.mode == CollectionMode.ACTIVE and not authorization.covers(seed):
                 refusal = {
@@ -187,8 +203,21 @@ class Engine:
             )
         return permitted
 
-    def _accepted_entity_types(self) -> set[Any]:
-        return {entity_type for connector in self.connectors for entity_type in connector.accepts}
+    def _can_enqueue_entity(self, entity: Entity, authorization: Authorization) -> bool:
+        if entity.type == EntityType.IPAddress:
+            return is_pivot_eligible(
+                entity,
+                authorization,
+                has_identification_enrichment=any(
+                    entity.type in connector.accepts
+                    and connector.enrichment_class == EnrichmentClass.IDENTIFICATION
+                    for connector in self.connectors
+                ),
+            )
+        return (
+            entity.type in {entity_type for connector in self.connectors for entity_type in connector.accepts}
+            and is_pivot_eligible(entity, authorization)
+        )
 
     async def _collect_into_store(
         self,

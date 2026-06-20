@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 import dns.exception
 import dns.resolver
 
-from osint.connectors.base import CollectionMode, Connector, register
+from osint.connectors.base import CollectionMode, Connector, EnrichmentClass, register
 from osint.connectors.context import CollectionContext
 from osint.core.entities import Entity, EntityType
 from osint.core.findings import Finding
@@ -47,6 +47,7 @@ class AsnConnector(Connector):
     produces = {EntityType.ASN, EntityType.Netblock}
     requires_api_key = False
     base_confidence = 0.85
+    enrichment_class = EnrichmentClass.IDENTIFICATION
 
     async def collect(
         self, seed: Entity, ctx: CollectionContext

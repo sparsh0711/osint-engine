@@ -152,6 +152,10 @@ class CollectionMode(StrEnum):
     PASSIVE = "passive"
     ACTIVE = "active"
 
+class EnrichmentClass(StrEnum):
+    IDENTIFICATION = "identification"
+    EXPOSURE = "exposure"
+
 class Connector(ABC):
     name: str                      # unique, e.g. "crtsh"
     source: str                    # human source label, e.g. "crt.sh"
@@ -161,6 +165,7 @@ class Connector(ABC):
     produces: set[EntityType]      # entity types it may yield
     requires_api_key: bool = False
     base_confidence: float = 0.6   # per-source prior
+    enrichment_class: EnrichmentClass = EnrichmentClass.EXPOSURE
 
     @abstractmethod
     async def collect(
@@ -174,6 +179,7 @@ class Connector(ABC):
 - **`Finding`** = `{ entities: list[Entity], relationships: list[Relationship] }` produced from one logical observation, each element already populated with a `Provenance` record stamped with the connector's `name`, `source`, query, timestamp, and a `raw_ref` (pointer to the stored raw artifact).
 - Connectors construct `Domain` entities via the shared `build_domain_entity` helper so the §4 domain rules cannot drift between connectors.
 - Connectors are **registered** via decorator/entry-point into a `REGISTRY` keyed by `name`; the orchestrator selects applicable connectors by matching `seed.type ∈ connector.accepts`.
+- IP enrichment connectors declare an `enrichment_class`. `IDENTIFICATION` enrichers add passive ownership or routing metadata from third-party sources (ASN, netblock, org) and may run on any discovered IP because this informs authorization decisions. `EXPOSURE` enrichers add service, port, vulnerability, or attack-surface data and remain authorization-gated. The default is `EXPOSURE` so new IP connectors are safe unless explicitly classified otherwise.
 - Phase 8 adds Cert Spotter as a second independent certificate-transparency subdomain source. crt.sh returning no results no longer starves company collection; overlapping subdomains from crt.sh and Cert Spotter corroborate through the existing store merge and noisy-OR confidence rule.
 - Phase 9 adds an intent-gated username account-existence connector using the vendored WhatsMyName dataset. Username results are unverified leads, not identity proof. The connector records only public account existence, platform, and profile URL; it must not scrape profile content, attempt logins, or collect personal identifiers such as DOB, address, phone number, or inferred real names.
 - Phase 10 adds keyless ASN/netblock enrichment via Team Cymru's DNS interface. It maps discovered IP addresses to announcing ASN and CIDR prefix entities, enabling owned-vs-shared IP range analysis for authorization decisions. Full ASN-to-all-prefix enumeration is deferred because it needs a BGP/RIR source rather than individual IP-to-ASN DNS lookups.
@@ -210,7 +216,7 @@ Phase 3 adds a minimal `Engine.run(..., store=None)` injection hook because the 
 
 Multi-hop pivoting is opt-in: `max_depth=0` processes only the initial seed, preserving the Phase 1-3 single-hop behavior. Runs also carry conservative default budgets (`max_seeds=10`, `max_calls=30`); a budget stop is recorded in the audit log.
 
-Recording and pivoting are separate controls. Every discovered entity and relationship is stored with provenance, but a discovered entity becomes a later seed only if the current depth is below `max_depth`, the entity has not already been visited, at least one registered connector accepts its type, and the pivot policy allows it. Domains pivot only when `attributes["under_seed"] is True`; `co-san` and external domains are terminal. IP addresses pivot only when the run authorization covers them. Other entity types are terminal in Phase 4.
+Recording and pivoting are separate controls. Every discovered entity and relationship is stored with provenance, but a discovered entity becomes a later seed only if the current depth is below `max_depth`, the entity has not already been visited, at least one registered connector accepts its type, and the pivot policy allows it. Domains pivot only when `attributes["under_seed"] is True`; `co-san` and external domains are terminal. IP addresses pivot when the run authorization covers them or when an applicable connector is explicitly classified as identification enrichment. Unauthorized IP pivots receive only identification enrichment such as ASN/netblock ownership; exposure enrichment such as service, port, or vulnerability data remains authorization-gated. Other entity types are terminal in Phase 4.
 
 The passive/active gate is enforced per hop before dispatch. Unauthorized active connectors are refused and recorded in the audit log; Phase 4 still ships no active connectors.
 

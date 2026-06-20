@@ -16,6 +16,11 @@ class CollectionMode(StrEnum):
     ACTIVE = "active"
 
 
+class EnrichmentClass(StrEnum):
+    IDENTIFICATION = "identification"
+    EXPOSURE = "exposure"
+
+
 class Connector(ABC):
     name: str
     source: str
@@ -25,6 +30,7 @@ class Connector(ABC):
     produces: set[EntityType]
     requires_api_key: bool = False
     base_confidence: float = 0.6
+    enrichment_class: EnrichmentClass = EnrichmentClass.EXPOSURE
 
     @abstractmethod
     async def collect(

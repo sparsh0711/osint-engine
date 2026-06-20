@@ -18,10 +18,18 @@ def test_co_san_domain_is_not_pivot_eligible() -> None:
     assert is_pivot_eligible(entity, Authorization()) is False
 
 
-def test_ip_is_pivot_eligible_only_when_authorized() -> None:
+def test_ip_is_pivot_eligible_when_authorized_or_identification_enrichment_exists() -> None:
     entity = _entity(EntityType.IPAddress, "10.0.0.5", {})
 
     assert is_pivot_eligible(entity, Authorization()) is False
+    assert (
+        is_pivot_eligible(
+            entity,
+            Authorization(),
+            has_identification_enrichment=True,
+        )
+        is True
+    )
     assert (
         is_pivot_eligible(entity, Authorization(in_scope_targets=["10.0.0.0/24"]))
         is True

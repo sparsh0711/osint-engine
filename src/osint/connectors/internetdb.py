@@ -14,7 +14,7 @@ from typing import Any
 
 import httpx
 
-from osint.connectors.base import CollectionMode, Connector, register
+from osint.connectors.base import CollectionMode, Connector, EnrichmentClass, register
 from osint.connectors.context import CollectionContext
 from osint.core.entities import Entity, EntityType
 from osint.core.findings import Finding
@@ -33,6 +33,7 @@ class InternetDbConnector(Connector):
     produces = {EntityType.Service, EntityType.IPAddress}
     requires_api_key = False
     base_confidence = 0.8
+    enrichment_class = EnrichmentClass.EXPOSURE
 
     async def collect(
         self, seed: Entity, ctx: CollectionContext
