@@ -26,6 +26,20 @@ The agent layer can reason over the collected graph, but final reports are valid
 - Provider-agnostic LLM client for local Ollama/OpenAI-compatible endpoints or hosted providers.
 - Grounded report validator that rejects fabricated or unsupported findings.
 
+## Screenshots
+
+Collection summary:
+
+![Collection summary](docs/screenshots/cli-summary.png)
+
+Neo4j vulnerability query:
+
+![Neo4j vulnerability query](docs/screenshots/neo4j-vulnerability-query.png)
+
+Grounded report preview:
+
+![Grounded report preview](docs/screenshots/grounded-report-preview.png)
+
 ## Safety Model
 
 - Passive collection is allowed by default.
