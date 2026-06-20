@@ -159,13 +159,13 @@ class Engine:
             if max_depth == 0 and connector.name == "dns":
                 continue
             if (
-                seed.type == EntityType.IPAddress
+                seed.type in {EntityType.IPAddress, EntityType.Vulnerability}
                 and connector.enrichment_class != EnrichmentClass.IDENTIFICATION
                 and not authorization.covers(seed)
             ):
                 audit_log.append(
                     {
-                        "event": "ip_exposure_connector_refused",
+                        "event": "exposure_connector_refused",
                         "connector": connector.name,
                         "seed_id": seed.id,
                         "seed_value": seed.value,
@@ -204,19 +204,22 @@ class Engine:
         return permitted
 
     def _can_enqueue_entity(self, entity: Entity, authorization: Authorization) -> bool:
-        if entity.type == EntityType.IPAddress:
+        if entity.type in {EntityType.IPAddress, EntityType.Vulnerability}:
             return is_pivot_eligible(
                 entity,
                 authorization,
-                has_identification_enrichment=any(
-                    entity.type in connector.accepts
-                    and connector.enrichment_class == EnrichmentClass.IDENTIFICATION
-                    for connector in self.connectors
-                ),
+                has_identification_enrichment=self._has_identification_enrichment(entity),
             )
         return (
             entity.type in {entity_type for connector in self.connectors for entity_type in connector.accepts}
             and is_pivot_eligible(entity, authorization)
+        )
+
+    def _has_identification_enrichment(self, entity: Entity) -> bool:
+        return any(
+            entity.type in connector.accepts
+            and connector.enrichment_class == EnrichmentClass.IDENTIFICATION
+            for connector in self.connectors
         )
 
     async def _collect_into_store(

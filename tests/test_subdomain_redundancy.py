@@ -29,6 +29,7 @@ def test_builtin_connectors_load() -> None:
         "asn",
         "certspotter",
         "crtsh",
+        "cvedb",
         "wayback",
         "dns",
         "internetdb",

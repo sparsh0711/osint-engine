@@ -14,4 +14,6 @@ def is_pivot_eligible(
         return entity.attributes.get("under_seed") is True
     if entity.type == EntityType.IPAddress:
         return authorization.covers(entity) or has_identification_enrichment
+    if entity.type == EntityType.Vulnerability:
+        return has_identification_enrichment
     return False

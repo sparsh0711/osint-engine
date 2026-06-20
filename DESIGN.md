@@ -84,9 +84,10 @@ Entities are the nodes of the graph. Every entity shares a common envelope; type
 ### Entity types (cyber-first)
 
 - **Domain** — `attributes`: `registered_domain`, `tld`, `is_wildcard`.
-- **IPAddress** — `attributes`: `version` (4/6), `is_private`. Phase 6 InternetDB enrichment may merge in `cpes`, `vulns`, and `hostnames`, plus source tags. `vulns` is a stopgap attribute until a later `Vulnerability` entity type exists.
+- **IPAddress** — `attributes`: `version` (4/6), `is_private`. Phase 6 InternetDB enrichment may merge in `cpes`, `vulns`, and `hostnames`, plus source tags. Phase 11 promotes CVEs in `vulns` into first-class `Vulnerability` entities; the IP-level list remains only for backward compatibility.
 - **Certificate** — `attributes`: `sha256`, `serial`, `issuer`, `subject`, `not_before`, `not_after`, `sans` (list).
 - **Service** — a host:port observation. `value` is canonicalized connector-side as `ip:port`; `attributes`: `ip`, `port`, `protocol`, `product`, `banner`. Phase 6 InternetDB produces `Service` with `protocol`, `product`, and `banner` set to null because InternetDB does not provide them.
+- **Vulnerability** — a published CVE. `value` is the uppercase CVE id; `attributes`: `cve_id`, `summary`, `cvss`, `cvss_version`, `severity`, `kev`, `epss`, `references`, `published_time`. Phase 11 is the first core-schema extension since Phase 1, using the intended enum-and-documentation path.
 - **ASN** — `attributes`: `number`, `name`, `org`. Phase 10 produces ASN entities from Team Cymru IP-to-ASN DNS lookups.
 - **Netblock** — `attributes`: `cidr`, `asn`. Phase 10 produces announcing netblocks from Team Cymru IP-to-ASN DNS lookups.
 - **Email** — `attributes`: `local`, `domain`.
@@ -115,6 +116,7 @@ Relationships are typed, directed edges. They carry their **own** provenance and
 | `ANNOUNCES`     | ASN → Netblock           | ASN announces this prefix. |
 | `CONTAINS`      | Netblock → IPAddress     | IP falls within prefix. |
 | `HOSTS`         | IPAddress → Service      | Observed service on host. |
+| `HAS_VULNERABILITY` | IPAddress → Vulnerability | Vulnerability reported for a host. |
 | `ASSOCIATED_WITH` | Email/Username → Person | Identity linkage (lower default confidence). |
 
 Edge envelope: `{ id, type, src_id, dst_id, sources, confidence, first_seen, last_seen }`. Edge `id` is deterministic from `(type, src_id, dst_id)`.
@@ -183,6 +185,7 @@ class Connector(ABC):
 - Phase 8 adds Cert Spotter as a second independent certificate-transparency subdomain source. crt.sh returning no results no longer starves company collection; overlapping subdomains from crt.sh and Cert Spotter corroborate through the existing store merge and noisy-OR confidence rule.
 - Phase 9 adds an intent-gated username account-existence connector using the vendored WhatsMyName dataset. Username results are unverified leads, not identity proof. The connector records only public account existence, platform, and profile URL; it must not scrape profile content, attempt logins, or collect personal identifiers such as DOB, address, phone number, or inferred real names.
 - Phase 10 adds keyless ASN/netblock enrichment via Team Cymru's DNS interface. It maps discovered IP addresses to announcing ASN and CIDR prefix entities, enabling owned-vs-shared IP range analysis for authorization decisions. Full ASN-to-all-prefix enumeration is deferred because it needs a BGP/RIR source rather than individual IP-to-ASN DNS lookups.
+- Phase 11 adds a first-class `Vulnerability` entity, `HAS_VULNERABILITY` relationships, and Shodan CVEDB enrichment for CVSS, CISA KEV, and EPSS. CVEDB is identification-class: it enriches public CVE metadata and runs without target authorization, while exposure enrichment remains gated.
 
 ---
 
@@ -258,9 +261,10 @@ Small local models may produce malformed JSON or weaker grounding; this is expec
 8. **Company hardening.** Redundant CT subdomain source via SSLMate Cert Spotter plus Neo4j relationship write fix. crt.sh failure no longer starves collection. People/identity connectors remain pending later phases.
 9. **Person axis.** Intent-gated username account-existence enumeration using the vendored WhatsMyName dataset. Existence-only leads, modest confidence, no profile scraping, no logins, and no DOB/address/phone/data-broker aggregation by policy.
 10. **ASN/netblock enrichment.** Team Cymru keyless DNS IP-to-ASN mapping produces `ASN` and `Netblock` entities plus `ANNOUNCES` and `CONTAINS` edges, enabling owned-vs-shared IP range analysis for authorization decisions. Full ASN-prefix enumeration remains deferred to a BGP/RIR source.
-11. **Closed-loop execution + adaptive depth.** Human-approved or policy-gated execution of recommended follow-up collection.
-12. **Breadth.** Paid Shodan, Censys, passive DNS, Amass/Subfinder wrappers, HaveIBeenPwned, GitHub dorking, additional policy-gated people/identity connectors, and the first gated active connector.
-13. **Visualization.** Link-graph view and richer analyst-facing presentation.
+11. **First-class Vulnerability entity + CVEDB enrichment.** InternetDB CVEs become `Vulnerability` nodes linked by `HAS_VULNERABILITY`; Shodan CVEDB adds CVSS, CISA KEV, and EPSS as identification-class public CVE metadata.
+12. **Closed-loop execution + adaptive depth.** Human-approved or policy-gated execution of recommended follow-up collection.
+13. **Breadth.** Paid Shodan, Censys, passive DNS, Amass/Subfinder wrappers, HaveIBeenPwned, GitHub dorking, additional policy-gated people/identity connectors, and the first gated active connector.
+14. **Visualization.** Link-graph view and richer analyst-facing presentation.
 
 ---
 

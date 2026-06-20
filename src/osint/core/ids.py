@@ -21,6 +21,10 @@ def canonical_certificate(value: str) -> str:
     return value.strip().lower()
 
 
+def canonical_vulnerability(value: str) -> str:
+    return value.strip().upper()
+
+
 def canonical_value(type_: str | Enum, value: str) -> str:
     type_value = _type_value(type_)
     if type_value == "Domain":
@@ -29,6 +33,8 @@ def canonical_value(type_: str | Enum, value: str) -> str:
         return canonical_ip(value)
     if type_value == "Certificate":
         return canonical_certificate(value)
+    if type_value == "Vulnerability":
+        return canonical_vulnerability(value)
     return value.strip()
 
 

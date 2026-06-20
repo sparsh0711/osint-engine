@@ -15,6 +15,7 @@ class EntityType(StrEnum):
     IPAddress = "IPAddress"
     Certificate = "Certificate"
     Service = "Service"
+    Vulnerability = "Vulnerability"
     ASN = "ASN"
     Netblock = "Netblock"
     Email = "Email"

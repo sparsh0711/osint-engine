@@ -36,6 +36,20 @@ def test_ip_is_pivot_eligible_when_authorized_or_identification_enrichment_exist
     )
 
 
+def test_vulnerability_is_pivot_eligible_only_for_identification_enrichment() -> None:
+    entity = _entity(EntityType.Vulnerability, "CVE-2021-44228", {"cve_id": "CVE-2021-44228"})
+
+    assert is_pivot_eligible(entity, Authorization()) is False
+    assert (
+        is_pivot_eligible(
+            entity,
+            Authorization(),
+            has_identification_enrichment=True,
+        )
+        is True
+    )
+
+
 def test_other_entity_types_are_not_pivot_eligible() -> None:
     entity = _entity(EntityType.Certificate, "abc123", {"sha256": None})
 

@@ -52,7 +52,12 @@ async def test_internetdb_yields_services_hosts_edges_and_ip_enrichment(respx_mo
     assert ip_entity.tags == {"resolver"}
     assert ip_entity.confidence == 0.8
 
-    assert set(entities) == {"8.8.8.8", "8.8.8.8:53", "8.8.8.8:443"}
+    assert set(entities) == {
+        "8.8.8.8",
+        "8.8.8.8:53",
+        "8.8.8.8:443",
+        "CVE-2017-15906",
+    }
     for value, port in {"8.8.8.8:53": 53, "8.8.8.8:443": 443}.items():
         service = entities[value]
         assert service.type == EntityType.Service
@@ -65,12 +70,30 @@ async def test_internetdb_yields_services_hosts_edges_and_ip_enrichment(respx_mo
         }
         assert service.sources[0].source == "shodan-internetdb"
 
-    assert {relationship.type for relationship in relationships} == {RelationType.HOSTS}
-    assert {relationship.src_id for relationship in relationships} == {ip_entity.id}
-    assert {relationship.dst_id for relationship in relationships} == {
+    vulnerability = entities["CVE-2017-15906"]
+    assert vulnerability.type == EntityType.Vulnerability
+    assert vulnerability.attributes == {"cve_id": "CVE-2017-15906"}
+    assert vulnerability.confidence == 0.8
+    assert vulnerability.sources[0].source == "shodan-internetdb"
+
+    assert {relationship.type for relationship in relationships} == {
+        RelationType.HOSTS,
+        RelationType.HAS_VULNERABILITY,
+    }
+    hosts = [relationship for relationship in relationships if relationship.type == RelationType.HOSTS]
+    vuln_edges = [
+        relationship
+        for relationship in relationships
+        if relationship.type == RelationType.HAS_VULNERABILITY
+    ]
+    assert {relationship.src_id for relationship in hosts} == {ip_entity.id}
+    assert {relationship.dst_id for relationship in hosts} == {
         entities["8.8.8.8:53"].id,
         entities["8.8.8.8:443"].id,
     }
+    assert len(vuln_edges) == 1
+    assert vuln_edges[0].src_id == ip_entity.id
+    assert vuln_edges[0].dst_id == vulnerability.id
     assert all(relationship.sources for relationship in relationships)
     assert all(entity.sources for entity in finding.entities)
 

@@ -42,7 +42,7 @@ async def test_unauthorized_ip_runs_identification_but_not_exposure(
     assert not any(relationship.type == RelationType.HOSTS for relationship in relationships)
     assert internetdb_route.call_count == 0
     assert any(
-        item.get("event") == "ip_exposure_connector_refused"
+        item.get("event") == "exposure_connector_refused"
         and item.get("connector") == "internetdb"
         for item in audit_log
     )
@@ -100,7 +100,7 @@ async def test_ip_connector_without_class_defaults_to_exposure_gated(
     assert "AS64500" in entities
     assert calls == []
     assert any(
-        item.get("event") == "ip_exposure_connector_refused"
+        item.get("event") == "exposure_connector_refused"
         and item.get("connector") == "default-ip"
         for item in audit_log
     )
@@ -207,4 +207,3 @@ def _domain_seed() -> Entity:
         ],
         confidence=1.0,
     )
-

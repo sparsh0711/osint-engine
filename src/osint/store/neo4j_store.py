@@ -23,6 +23,15 @@ from osint.store.serialize import (
     relationship_to_props,
 )
 
+_PROMOTED_ENTITY_PROPERTIES: dict[EntityType, dict[str, type]] = {
+    EntityType.Vulnerability: {
+        "cvss": float,
+        "epss": float,
+        "kev": bool,
+        "severity": str,
+    }
+}
+
 
 class Neo4jEntityStore(EntityStore):
     def __init__(self, uri: str, user: str, password: str) -> None:
@@ -150,7 +159,7 @@ class Neo4jEntityStore(EntityStore):
             stored = entity.model_copy(deep=True)
             source_map = source_confidences(stored.sources, stored.confidence)
 
-        props = entity_to_props(stored, source_map)
+        props = _entity_props_for_store(stored, source_map)
         label = _entity_label(stored.type.value)
         tx.run(
             f"MERGE (n:Entity {{id: $id}}) SET n += $props SET n:{label}",
@@ -230,3 +239,30 @@ def _relationship_record_props(record: Any) -> dict[str, Any]:
     props["src_id"] = record["src_id"]
     props["dst_id"] = record["dst_id"]
     return props
+
+
+def _entity_props_for_store(
+    entity: Entity, source_confidences_map: dict[str, float]
+) -> dict[str, Any]:
+    props = entity_to_props(entity, source_confidences_map)
+    promoted_fields = _PROMOTED_ENTITY_PROPERTIES.get(entity.type, {})
+    for name, property_type in promoted_fields.items():
+        props[name] = _promoted_property_value(entity.attributes.get(name), property_type)
+    return props
+
+
+def _promoted_property_value(value: Any, property_type: type) -> Any:
+    if value is None:
+        return None
+    if property_type is bool:
+        if isinstance(value, bool):
+            return value
+        return None
+    if property_type is float:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+    if property_type is str:
+        return str(value)
+    return value

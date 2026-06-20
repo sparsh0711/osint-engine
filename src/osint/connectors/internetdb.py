@@ -30,7 +30,7 @@ class InternetDbConnector(Connector):
     description = "Key-free IP enrichment via Shodan InternetDB"
     mode = CollectionMode.PASSIVE
     accepts = {EntityType.IPAddress}
-    produces = {EntityType.Service, EntityType.IPAddress}
+    produces = {EntityType.Service, EntityType.IPAddress, EntityType.Vulnerability}
     requires_api_key = False
     base_confidence = 0.8
     enrichment_class = EnrichmentClass.EXPOSURE
@@ -132,6 +132,25 @@ class InternetDbConnector(Connector):
                 )
             )
 
+        for cve_id in _cve_ids(payload.get("vulns")):
+            vulnerability = Entity(
+                type=EntityType.Vulnerability,
+                value=cve_id,
+                attributes={"cve_id": cve_id},
+                sources=[provenance],
+                confidence=self.base_confidence,
+            )
+            entities.append(vulnerability)
+            relationships.append(
+                Relationship(
+                    type=RelationType.HAS_VULNERABILITY,
+                    src_id=seed.id or ip_entity.id,
+                    dst_id=vulnerability.id,
+                    sources=[provenance],
+                    confidence=self.base_confidence,
+                )
+            )
+
         return Finding(entities=entities, relationships=relationships)
 
 
@@ -151,3 +170,13 @@ def _ports(value: Any) -> list[int]:
         if 0 < item <= 65535:
             ports.add(item)
     return sorted(ports)
+
+
+def _cve_ids(value: Any) -> list[str]:
+    return sorted(
+        {
+            item.strip().upper()
+            for item in _string_list(value)
+            if item.strip().upper().startswith("CVE-")
+        }
+    )
